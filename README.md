@@ -62,7 +62,7 @@ cd drone-detector
 ```
 
 Requires Zeek (tested with 9.0.1). Running the regression tests also requires
-Python 3. This repository is private initially, so GitHub access is required.
+Python 3. This repository is public and can be cloned without authentication.
 
 For a standalone Zeek installation with the Zeek package manager:
 
