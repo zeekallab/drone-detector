@@ -1,0 +1,5 @@
+[package]
+description = Detect legacy DJI Phantom Vision control protocol with stream framing and checksum validation
+version = 0.1.0
+script_dir = scripts
+test_command = python3 tests/test_detector.py
