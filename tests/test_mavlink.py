@@ -28,7 +28,7 @@ def message(seq, msgid=0, payload=None, extra=50, version=2, signed=False,
     return packet+(b'\x01'+b'\0'*12 if signed else b'')
 
 
-def pcap(payloads, sport=40000, dport=14550, reverse=False, ipv6=False):
+def pcap(payloads, sport=40000, dport=14550, reverse=False, ipv6=False, times=None):
     import ipaddress
     frames=[]
     for n,p in enumerate(payloads):
@@ -46,7 +46,9 @@ def pcap(payloads, sport=40000, dport=14550, reverse=False, ipv6=False):
             ip=ip[:10]+struct.pack('!H',checksum(ip))+ip[12:];etype=b'\x08\x00'
         frames.append(bytes.fromhex('00112233445566778899aabb')+etype+ip+udp)
     data=struct.pack('<IHHIIII',0xa1b2c3d4,2,4,0,0,65535,1)
-    for i,f in enumerate(frames):data+=struct.pack('<IIII',1700000000,i*1000,len(f),len(f))+f
+    for i,f in enumerate(frames):
+        t = times[i] if times is not None else i * .001
+        data += struct.pack('<IIII',1700000000+int(t),round((t-int(t))*1000000),len(f),len(f))+f
     return data
 
 

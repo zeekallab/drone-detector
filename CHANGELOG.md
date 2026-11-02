@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-02
+
+- Write immediately on protocol confirmation, followed by traffic-driven updates
+  at most once per minute per connection, in the same drone.log. No session-end
+  duplicate; timestamps now represent observation/emission time.
+- Add bounded, source-separated MAVLink coordinates, altitude, battery remaining,
+  VFR HUD movement, armed status and stack-aware flight-mode snapshots.
+- Omit unavailable/stale measurements and attach per-measurement timestamps.
+  Telemetry is a JSON-encoded array string for native Zeek writer compatibility.
+- Make verbose parser counters, raw mode histories and message-type lists opt-in
+  with include_diagnostics; retain identity/evidence and visibility-limit flags.
+- Add bounded per-window control request/ACK summaries, including RC/manual/offboard
+  inputs, plus configurable position/altitude discontinuity and multiple-controller
+  system-ID indicators. These are signals to investigate, not proof of takeover.
+- Keep IP-based controller trust checks optional and disabled without configuration.
+- Recognize simulator-message evidence and avoid treating GCS/companion heartbeats
+  as autopilot flight state. CRC validation is not sender authentication.
+- Renew bounded inspection allowances for confirmed long-running connections.
+- Add live-logging/telemetry regressions and replay the capture shared by
+  [kresoin](https://github.com/kresoin) in default and diagnostic modes.
+
 
 - Remove obsolete TCP reassembler port settings that trigger deprecation warnings
   on some Zeek builds. TCP stream delivery continues through the existing

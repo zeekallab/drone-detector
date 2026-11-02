@@ -9,9 +9,13 @@ export {
     const minimum_consecutive_messages: count = 3 &redef;
     const max_inspected_bytes: count = 1048576 &redef;
     const max_pending_requests: count = 256 &redef;
+    # Emit on validated traffic, never on a timer or at connection removal.
+    const log_interval = 60 secs &redef;
+    const include_diagnostics = F &redef;
 
     type Info: record {
         ts: time &log;
+        event_type: string &log;
         uid: string &log;
         id: conn_id &log;
         likely_manufacturer: string &log;
@@ -19,19 +23,35 @@ export {
         evidence: string &log;
         orig_messages: count &log;
         resp_messages: count &log;
-        matched_responses: count &log;
-        commands: set[count] &log;
-        checksum_failures: count &log;
-        skipped_bytes: count &log;
-        gaps: count &log;
+        matched_responses: count &log &optional;
+        commands: set[count] &log &optional;
+        checksum_failures: count &log &optional;
+        skipped_bytes: count &log &optional;
+        gaps: count &log &optional;
         inspection_limited: bool &log;
     };
+    global write_log: function(rec: Info);
     redef record Conn::Info += {
         drone_protocol: string &log &optional;
         drone_likely_manufacturer: string &log &optional;
         drone_evidence: string &log &optional;
     };
 }
+
+function write_log(rec: Info)
+    {
+    if ( ! include_diagnostics )
+        {
+        delete rec$matched_responses;
+        delete rec$commands;
+        delete rec$checksum_failures;
+        delete rec$skipped_bytes;
+        delete rec$gaps;
+        }
+    Log::write(LOG, rec);
+    }
+
+global emit: function(c: connection);
 
 type Direction: record {
     buffer: string &default="";
@@ -42,6 +62,8 @@ type State: record {
     orig: Direction;
     resp: Direction;
     confirmed: bool &default=F;
+    last_log: time &optional;
+    budget_start: time;
     inspected: count &default=0;
     limited: bool &default=F;
     checksum_failures: count &default=0;
@@ -57,7 +79,7 @@ redef record connection += { drone_state: State &optional; };
 function state(c: connection): State
     {
     if ( ! c?$drone_state )
-        c$drone_state = State($orig=Direction(), $resp=Direction(),
+        c$drone_state = State($budget_start=network_time(), $orig=Direction(), $resp=Direction(),
                             $commands=set(), $pending=set());
     return c$drone_state;
     }
@@ -85,7 +107,10 @@ event tcp_contents(c: connection, is_orig: bool, seq: count, contents: string)
     {
     if ( c$id$resp_p !in ports ) return;
     local s = state(c);
-    if ( s$limited ) return;
+    if ( s$confirmed && network_time() - s$budget_start >= 60 secs )
+        { s$inspected = 0; s$budget_start = network_time(); }
+    if ( s$inspected >= max_inspected_bytes ) return;
+    local before = s$orig$messages + s$resp$messages;
     local d = is_orig ? s$orig : s$resp;
     local remaining = max_inspected_bytes - s$inspected;
     local take = |contents| < remaining ? |contents| : remaining;
@@ -132,6 +157,7 @@ event tcp_contents(c: connection, is_orig: bool, seq: count, contents: string)
         s$orig$buffer = "";
         s$resp$buffer = "";
         }
+    if ( s$orig$messages + s$resp$messages > before && s$confirmed ) emit(c);
     }
 
 event content_gap(c: connection, is_orig: bool, seq: count, length: count)
@@ -154,18 +180,25 @@ event connection_flipped(c: connection)
     c$drone_state$pending = set();
     }
 
-event connection_state_remove(c: connection) &priority=0
+function emit(c: connection)
     {
-    if ( ! c?$drone_state || ! c$drone_state$confirmed ) return;
     local s = c$drone_state;
+    if ( s?$last_log && network_time() - s$last_log < log_interval ) return;
     local evidence = s$matched > 0 ? "framing+xor+request_response" : "framing+xor";
-    local protocol = "dji-phantom-vision-legacy";
-    if ( c?$conn )
-        { c$conn$drone_protocol = protocol; c$conn$drone_likely_manufacturer = "DJI"; c$conn$drone_evidence = evidence; }
-    Log::write(LOG, [$ts=c$start_time, $uid=c$uid, $id=c$id,
-        $likely_manufacturer="DJI", $protocol=protocol, $evidence=evidence,
+    write_log([$ts=network_time(), $event_type=s?$last_log ? "update" : "detection",
+        $uid=c$uid, $id=c$id, $likely_manufacturer="DJI",
+        $protocol="dji-phantom-vision-legacy", $evidence=evidence,
         $orig_messages=s$orig$messages, $resp_messages=s$resp$messages,
         $matched_responses=s$matched, $commands=s$commands,
         $checksum_failures=s$checksum_failures, $skipped_bytes=s$skipped,
         $gaps=s$gaps, $inspection_limited=s$limited]);
+    s$last_log = network_time();
+    }
+
+event connection_state_remove(c: connection) &priority=0
+    {
+    if ( ! c?$drone_state || ! c$drone_state$confirmed || ! c?$conn ) return;
+    c$conn$drone_protocol = "dji-phantom-vision-legacy";
+    c$conn$drone_likely_manufacturer = "DJI";
+    c$conn$drone_evidence = c$drone_state$matched > 0 ? "framing+xor+request_response" : "framing+xor";
     }

@@ -53,7 +53,10 @@ def capture(chunks, port=2001):
     return out
 
 
-def run(data, settings=''):
+def run(data, settings='', live=False):
+    # Parser regressions inspect the final event snapshot; timing tests use defaults.
+    if not live:
+        settings = 'redef DroneDetector::log_interval = 0secs;\nredef DroneDetector::include_diagnostics = T;\n' + settings
     with tempfile.TemporaryDirectory(prefix='dji-detector-') as tmp:
         tmp=Path(tmp)
         (tmp/'input.pcap').write_bytes(data)
@@ -65,7 +68,10 @@ def run(data, settings=''):
             p=tmp/(name+'.log')
             return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
         assert not read('reporter'),read('reporter')
-        return read('drone'),read('conn')
+        rows = read('drone')
+        if not live:
+            rows = list({r['uid']: r for r in rows}.values())
+        return rows,read('conn')
 
 
 def main():
@@ -107,8 +113,6 @@ def main():
         assert (r['orig_messages'],r['resp_messages'],r['matched_responses'])==(1230,1539,1220),r
         assert not r['inspection_limited'] and r['checksum_failures']==0 and r['skipped_bytes']==0,r
         assert sum('drone_protocol' in c for c in conns)==1,conns
-        (ROOT/'validation').mkdir(exist_ok=True)
-        (ROOT/'validation'/'real-capture-result.json').write_text(json.dumps(r,indent=2)+'\n')
         print('PASS: real DJI capture; 2769 valid messages, 1220 matched responses, one detected connection.')
 
 if __name__=='__main__':main()
