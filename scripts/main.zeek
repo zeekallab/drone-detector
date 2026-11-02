@@ -77,10 +77,6 @@ event zeek_init() &priority=5
         {
         tcp_content_delivery_ports_orig[p] = T;
         tcp_content_delivery_ports_resp[p] = T;
-@ifdef ( tcp_reassembler_ports_orig )
-        add tcp_reassembler_ports_orig[p];
-        add tcp_reassembler_ports_resp[p];
-@endif
         }
     Log::create_stream(LOG, [$columns=Info, $path="drone"]);
     }

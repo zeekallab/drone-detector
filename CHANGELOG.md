@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Remove obsolete TCP reassembler port settings that trigger deprecation warnings
+  on some Zeek builds. TCP stream delivery continues through the existing
+  `tcp_content_delivery_ports_orig` and `tcp_content_delivery_ports_resp` settings.
+
 ## 0.2.0 — 2026-11-02
 
 - Add MAVLink 1/2 over UDP, with message-specific CRC_EXTRA validation and
