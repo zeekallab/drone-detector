@@ -1,5 +1,6 @@
 [package]
-description = Detect legacy DJI Phantom Vision control protocol with stream framing and checksum validation
-version = 0.1.0
+description = Drone protocol evidence in drone.log: legacy DJI control and MAVLink 1/2 with CRC validation
+version = 0.2.0
 script_dir = scripts
-test_command = python3 tests/test_detector.py
+depends = zeek >=9.0.0
+test_command = python3 tests/run_tests.py
