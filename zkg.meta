@@ -1,6 +1,6 @@
 [package]
 description = Drone protocol evidence in drone.log: legacy DJI, MAVLink 1/2 and Tello SDK
-version = 0.12.1
+version = 0.12.2
 script_dir = scripts
 depends = zeek >=9.0.0
 test_command = python3 tests/run_tests.py

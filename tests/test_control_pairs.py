@@ -21,7 +21,7 @@ def main():
     assert sum(r['sdk_command_count'] for r in rows)==22,rows
     assert len(rows[-1]['sdk_related_uids'])==21 and rows[-1]['sdk_source_port_count']>=20;cases=1
     fixed=[cmd(t,p,40000) for t,p,_,_,_ in seq]
-    rows,_=replay(fixed);assert not alert(rows,'Control source-port churn') and alert(rows,'Repetitive maneuver');cases+=1
+    rows,_=replay(fixed);assert not alert(rows,'Control source-port churn') and alert(rows,'Repetitive maneuver');assert all('sdk_related_uids' not in r for r in rows),rows;cases+=1
     rows,_=replay(seq,state=False);assert not rows;cases+=1
     rows,_=replay([cmd(130+i*3,b'forward 20',40000+i) for i in range(20)]+[cmd(195,b'battery?',40100)])
     assert not rows;cases+=1
@@ -38,6 +38,13 @@ def main():
     rows,_=replay(seq,'redef DroneTello::churn_min_ports = 100;\n');assert not alert(rows,'Control source-port churn');cases+=1
     rows,_=replay(seq,'redef DroneTello::max_source_ports = 4;\n');assert not alert(rows,'Control source-port churn') and rows[-1]['activity_limited'];cases+=1
     rows,_=replay(seq,'redef DroneTello::max_related_uids = 2;\n');assert len(rows[-1]['sdk_related_uids'])==2 and rows[-1]['activity_limited'];cases+=1
+    # A bounded singleton referring to another connection still adds information.
+    rows,_=replay(seq,'redef DroneTello::max_related_uids = 1;\n')
+    assert len(rows[-1]['sdk_related_uids'])==1 and rows[-1]['uid'] not in rows[-1]['sdk_related_uids'] and rows[-1]['activity_limited'],rows
+    cases+=1
+    rows,_=replay(seq,'redef DroneTello::max_related_uids = 0;\n')
+    assert all('sdk_related_uids' not in r for r in rows) and rows[-1]['activity_limited'],rows
+    cases+=1
     rows,allrows=replay(seq+[(20,STATE,8889,8890,False),(40,STATE,8889,8890,False),(66,STATE,8889,8890,False)],'redef DroneTello::max_control_pairs = 0;\n')
     assert not rows and any(r.get('activity_limited') for r in allrows);cases+=1
     # Pure queries can churn ports but are not movement: only the churn description applies.

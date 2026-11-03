@@ -234,7 +234,14 @@ function emit(c: connection, s: State, pair_summary: bool)
         rec$sdk_summary_scope="host-pair";
         rec$sdk_command_count=s$command_count;
         rec$sdk_source_port_count=s$peak_ports;
-        if ( s?$related_uids ) rec$sdk_related_uids=s$related_uids;
+        # Emit the full contributing set only when it adds another connection.
+        if ( s?$related_uids )
+            for ( related_uid in s$related_uids )
+                if ( related_uid != c$uid )
+                    {
+                    rec$sdk_related_uids=s$related_uids;
+                    break;
+                    }
         delete rec$orig_messages; delete rec$resp_messages;
         if ( s$churn )
             {

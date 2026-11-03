@@ -8,7 +8,13 @@ Logs on confirmation and then at most once per minute per connection (SDK comman
 summaries are limited per host pair). Traffic can also come from simulators or
 replays; detection does not prove a drone is airborne or being taken over.
 
-## Latest changes — v0.12.1
+## Latest changes — v0.12.2
+
+`sdk_related_uids` now appears only when it adds a connection ID beyond the
+record's `uid`. Single-connection summaries omit the redundant field; summaries
+spanning connections retain their contributing IDs.
+
+### Compact Tello telemetry (v0.12.1)
 
 Tello `flight_telemetry` now contains only height, time-of-flight distance, and
 battery percentage, preserving original units without conversions:

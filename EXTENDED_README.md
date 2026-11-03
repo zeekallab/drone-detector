@@ -1,8 +1,15 @@
-# Drone detector — extended documentation (v0.12.1)
+# Drone detector — extended documentation (v0.12.2)
 
 [Back to the project overview](README.md)
 
-## What's new — v0.12.1
+## What's new — v0.12.2
+
+`sdk_related_uids` is omitted when empty or when it only repeats the record's
+`uid`. If any tracked contributing UID differs, the full tracked set is retained,
+including a singleton containing a different UID. Tracking bounds and the
+`activity_limited` warning remain unchanged.
+
+## Earlier updates — v0.12.1
 
 Tello SDK flight telemetry is trimmed to height, time-of-flight distance and
 battery status, with original values and units. All existing detection, freshness

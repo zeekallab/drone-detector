@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.2 — 2026-11-03
+
+- Omit sdk_related_uids when empty or redundant with uid; retain the contributing
+  set whenever it includes another connection. No detection or rate-limit changes.
+
 ## 0.12.1 — 2026-11-03
 
 - Trim Tello SDK flight_telemetry to height_cm, tof_distance_cm and battery_status
