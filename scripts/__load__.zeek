@@ -2,3 +2,4 @@
 @load ./mavlink
 
 @load ./tello
+@load ./tello-binary

@@ -1,10 +1,21 @@
-# Drone protocol detector — 0.4.0
+# Drone protocol detector — 0.5.0
 
-## What's new — v0.4.0 and v0.3.0
+## What's new — v0.5.0
+
+- **New `alert` field:** human-readable replay-like and malformed-control findings
+  in the existing minute-limited `drone.log`.
+- **Binary Tello identification:** validate declared length, header CRC8 and frame
+  CRC16 before evaluating joystick replay/integrity patterns.
+- **Optional wireless alert:** deauthentication bursts and EAPOL context from raw
+  radiotap captures; not a claim of successful password cracking.
+- **Documented alert definitions:** see the [alert reference](#alert-reference)
+  for descriptions, thresholds, examples and input requirements.
+
+## Earlier updates — v0.4.0 and v0.3.0
 
 - **Tello SDK support:** detect repeated structured status messages and correlate
   commands with recently observed drone/controller pairs. Record battery, height,
-  orientation and raw motion values. Binary Tello control remains unsupported.
+  orientation and raw motion values. v0.5.0 adds separate binary Tello identification.
 - **Earlier, quieter logging:** keep one `drone.log`, emit on protocol confirmation,
   then update at most once per minute per connection by default. No session-end duplicate.
 - **MAVLink flight telemetry:** report coordinates, altitude, battery, groundspeed,
@@ -19,7 +30,7 @@
   are credited below and in the fixture documentation.
 
 See the [changelog](CHANGELOG.md) for release details and
-[v0.4.0 validation](validation/v0.4.0-results.md) for evidence and coverage limits.
+[v0.5.0 validation](validation/v0.5.0-results.md) for evidence and coverage limits.
 
 ## Overview
 
@@ -27,6 +38,7 @@ Zeek scripts that write manufacturer-neutral **`drone.log`** records for:
 
 - **Legacy DJI Phantom Vision control/telemetry**, over configured TCP ports.
 - **Tello SDK status and correlated commands**, over configured UDP ports.
+- **Binary Tello control traffic**, with validated framing and replay/integrity alerts.
 - **MAVLink 1 and 2**, over configured UDP ports, with message-specific CRC validation
   and heartbeat-based role information.
 
@@ -35,6 +47,119 @@ MAVLink; Tello SDK uses **DJI/Ryze**. `autopilot_software` may identify ArduPilo
 not a hardware manufacturer. MAVLink also serves rovers, boats, cameras and
 simulators. A protocol match does not prove that a physical aircraft is present,
 airborne, or carrying out an attack.
+
+## Alert reference
+
+The optional **`alert`** field in `drone.log` is an array of human-readable
+findings. It is omitted when no alert threshold is met; a record can contain
+both control-traffic alerts. These are **suspected interference indicators**,
+not proof that a drone accepted a command or that a takeover/password crack succeeded.
+
+### Replay-like control traffic
+
+**Description:** Repeated older, checksum-valid Tello joystick messages suggest
+reuse of captured control traffic rather than newly generated input.
+
+The binary parser first requires three distinct valid frames in the same direction,
+with consistent length, header CRC8 and frame CRC16. For joystick messages (`0x0050`,
+type `0x60`) sent toward a configured control port, the default threshold is
+20 delayed repeat observations covering at least five distinct complete payloads,
+representing at least 50% of eligible control frames since the preceding log entry.
+An identical payload must have been last seen 2–120 seconds earlier. Immediate
+retransmissions, sequence number zero, constant stick-axis values, repeated queries,
+and responses alone do not trigger this alert.
+
+### Malformed control traffic
+
+**Description:** Repeated Tello joystick messages have inconsistent declared
+lengths or fail the full-frame checksum within an already confirmed binary stream.
+
+The default threshold is three malformed joystick frames since the preceding
+record. A valid header CRC is required before interpreting command/length fields.
+Malformed traffic by itself cannot establish Tello identity. Damaged captures or
+faulty senders can also cause this condition; compare capture quality and other evidence.
+
+Example when both conditions are met:
+
+```json
+"alert": [
+  "Replay-like control traffic: repeated older, checksum-valid Tello joystick messages",
+  "Malformed control traffic: repeated Tello joystick length or checksum failures"
+]
+```
+
+Binary records use `protocol=tello-binary` and `likely_manufacturer=DJI/Ryze`.
+The fields `binary_control_frames`, `binary_replayed_frames`,
+`binary_replayed_distinct`, and `binary_malformed_control_frames` describe the
+interval since the preceding log entry, while directional message totals remain
+cumulative. `binary_tracking_limited` warns that bounded fingerprint tracking
+omitted information. CRC validation does not authenticate a sender. The parser
+identifies binary traffic but does not yet decode its flight-state measurements.
+
+### Wireless deauthentication burst (optional)
+
+**Description:** Repeated unprotected, non-retry Wi-Fi disconnect frames affect
+a network whose observed beacon SSID matches `TELLO-` plus six hexadecimal digits.
+This can indicate wireless disruption or an attempt to provoke WPA handshakes.
+
+This alert requires **explicitly loading `scripts/wifi.zeek`** and raw radiotap
+802.11 capture input. It is not loaded by the default package and cannot work
+from an ordinary Ethernet/IP mirror lacking wireless management frames. The raw
+packet handler has higher processing cost; live Corelight support/performance
+has not been validated. It is tested offline on Zeek 9.0.1.
+
+The default is 20 distinct deauthentication frames within a 10-second bucket,
+after observing a matching beacon. Retry-marked frames, duplicate management-frame
+identities within the bucket, protected management payloads and frames marked
+bad-FCS by radiotap are excluded. EAPOL key frames are counted as supporting
+context, **never as proof of password guessing**. Normal handshakes alone do not
+trigger an alert. Offline password cracking cannot be inferred from these captures.
+
+Wireless records contain BSSID/SSID and deauthentication/EAPOL counts. They omit
+IP connection ID and UID because no IP connection exists for these management
+frames. `likely_manufacturer=unknown`: an SSID is a claim and can be spoofed.
+MAC transmitter addresses can also be spoofed and do not identify an attacker.
+The rate limit is once per minute per BSSID. Tracking is bounded; a sticky
+`wireless_tracking_limited` flag means counts may be incomplete.
+
+```sh
+# Explicit opt-in, from a separate output directory:
+zeek -r /path/to/radiotap-capture.pcap /path/to/drone-detector/scripts/wifi.zeek LogAscii::use_json=T
+```
+
+### Thresholds and limits
+
+```zeek
+redef DroneTelloBinary::replay_min_age = 2secs;
+redef DroneTelloBinary::replay_max_age = 120secs;
+redef DroneTelloBinary::replay_min_frames = 20;
+redef DroneTelloBinary::replay_min_distinct = 5;
+redef DroneTelloBinary::replay_min_fraction = 0.5;
+redef DroneTelloBinary::malformed_min_frames = 3;
+redef DroneTelloBinary::max_fingerprints = 2048;
+# After explicitly loading wifi.zeek:
+redef DroneWiFi::minimum_deauth_frames = 20;
+redef DroneWiFi::burst_interval = 10secs;
+```
+
+All limits/intervals must be positive; fraction must be between 0 and 1. These
+are configurable starting points, not a universal attack classifier. Binary
+inspection is bounded at 1 MiB per connection before confirmation, renewing every
+60 seconds on confirmed traffic. Fingerprints are bounded separately per direction
+and expired during logging. A single fixed payload repeated rapidly can evade the
+multi-payload delayed-repeat rule. Stateful comparisons are per connection/worker,
+not cross-connection controller authentication. Altered payloads with recomputed
+checksums may pass validation. Packet loss/capture damage can affect evidence.
+
+IP protocols share the per-connection logging gate. The configured log interval
+(default 60 seconds) is not bypassed for alerts, and there is no final-session
+flush. Brief activity after the last record can therefore remain unreported if
+traffic ends before the next eligible record. A shorter interval trades volume
+for faster reporting and changes the amount of evidence accumulated per record.
+
+[Validation results](validation/v0.5.0-results.md) describe positive captures,
+normal comparisons and coverage limits. [Wireless capture findings](docs/password-cracking-review.md)
+explain what is observable in the password-cracking folder.
 
 ## Credit for the real MAVLink capture
 
@@ -347,9 +472,8 @@ are not currently summarized. A normal command may be used maliciously, but
 its presence is **not** a takeover verdict. MAVLink-specific anomaly indicators
 are not applied to these different Tello measurements.
 
-The binary Tello protocol observed in the replay/manipulation/spoofing samples
-is still unsupported. The `cc` prefix alone is insufficient: it needs a separate
-validated framing/checksum decoder. Neither SDK text nor learned host pairs are
+Binary Tello traffic is handled separately by `tello-binary.zeek` starting in
+v0.5.0. The `cc` prefix alone is insufficient: framing and both checksums are validated. Neither SDK text nor learned host pairs are
 authenticated; spoofed status can imitate this protocol.
 
 Reference: [Ryze Tello SDK 2.0 User Guide](https://dl-cdn.ryzerobotics.com/downloads/Tello/Tello%20SDK%202.0%20User%20Guide.pdf).
@@ -430,7 +554,8 @@ The first motor-speed packet in the simulator fixture starts FE, but contains
 [Dataset research notes](docs/dataset-research.md) cover the Kaggle flight-log
 CSV/JSON dataset and UVic ISOT Tello PCAPs, with attribution and limitations.
 The UVic SDK injection fixture is now a positive Tello test; three binary
-Tello fixtures remain negative/coverage-gap tests. The Kaggle files are not PCAPs and are not used to claim
+Tello fixtures now verify binary protocol identification. Expanded ISOT tests
+cover six manipulation captures, three normal flights and two wireless captures. The Kaggle files are not PCAPs and are not used to claim
 network detector accuracy or calibrate the heuristic thresholds.
 
 ## Limits and next steps

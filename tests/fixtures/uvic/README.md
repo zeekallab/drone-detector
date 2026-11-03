@@ -24,8 +24,8 @@ optional files the test reports a skip. The test uses `-C` to ensure application
 payloads are examined even if stored transport checksums are incomplete, and
 explicitly includes UDP/8889 and UDP/8890 as MAVLink candidate ports.
 
-Expected v0.4.0 outcome: **nine Tello SDK records** for the instruction-injection
-capture, containing status and correlated command activity; **no detections**
-for the three binary replay/manipulation/spoofing samples. This validates SDK
-identification, not a determination that observed commands were malicious.
+Expected v0.5.0 outcome: nine SDK records plus binary telemetry records in the
+instruction-injection capture; binary Tello identification in replay/manipulation/
+spoofing samples. These tests do not equate classification with successful takeover.
+Expanded optional tests use the extracted archive via `tests/test_isot_alerts.py`.
 Never replay attack captures onto a live drone network; tests read files offline.

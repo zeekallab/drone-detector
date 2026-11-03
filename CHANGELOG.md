@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — 2026-11-03
+
+- Add the optional `alert` array with replay-like and malformed-control descriptions.
+- Identify binary Tello via repeated distinct frames with validated length, CRC8
+  and CRC16; analyze delayed whole-message joystick reuse and integrity failures.
+- Share a per-connection emission gate across IP protocols; retain minute-limited
+  logging and no session-end duplicate.
+- Add opt-in radiotap Wi-Fi deauthentication burst detection, with SSID/BSSID and
+  EAPOL context. It is disabled in the default package; no password-cracking claim.
+- Allow missing UID/IP IDs on wireless-only records instead of inventing connections.
+- Add alert definitions, thresholds and coverage limits to README; test manipulation,
+  additional normal flights and wireless captures with UVic ISOT attribution.
+
 ## 0.4.0 — 2026-11-02
 
 - Add Tello SDK detection from repeated structured status messages, with battery,

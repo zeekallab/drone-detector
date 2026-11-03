@@ -114,6 +114,7 @@ function sdk_command(data: string): bool
 
 function emit(c: connection, s: State)
     {
+    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
     if ( ! s$confirmed || (s?$last_log && network_time() - s$last_log < DroneDetector::log_interval) ) return;
     local rec = DroneDetector::Info($ts=network_time(),$event_type=s?$last_log ? "update" : "detection",
         $uid=c$uid,$id=c$id,$likely_manufacturer="DJI/Ryze",$protocol="tello-sdk",
@@ -125,6 +126,7 @@ function emit(c: connection, s: State)
     for ( command in s$activity ) activities[|activities|]=s$activity[command];
     if ( |activities| > 0 ) rec$control_activity = to_json(activities);
     DroneDetector::write_log(rec);
+    c$drone_log_ts=network_time();
     s$activity = table();
     s$last_log = network_time();
     }

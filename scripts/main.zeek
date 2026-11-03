@@ -16,13 +16,14 @@ export {
     type Info: record {
         ts: time &log;
         event_type: string &log;
-        uid: string &log;
-        id: conn_id &log;
+        uid: string &log &optional;
+        id: conn_id &log &optional;
         likely_manufacturer: string &log;
         protocol: string &log;
         evidence: string &log;
-        orig_messages: count &log;
-        resp_messages: count &log;
+        alert: set[string] &log &optional;
+        orig_messages: count &log &optional;
+        resp_messages: count &log &optional;
         matched_responses: count &log &optional;
         commands: set[count] &log &optional;
         checksum_failures: count &log &optional;
@@ -37,6 +38,8 @@ export {
         drone_evidence: string &log &optional;
     };
 }
+
+redef record connection += { drone_log_ts: time &optional; };
 
 function write_log(rec: Info)
     {
@@ -182,6 +185,7 @@ event connection_flipped(c: connection)
 
 function emit(c: connection)
     {
+    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < log_interval ) return;
     local s = c$drone_state;
     if ( s?$last_log && network_time() - s$last_log < log_interval ) return;
     local evidence = s$matched > 0 ? "framing+xor+request_response" : "framing+xor";
@@ -192,6 +196,7 @@ function emit(c: connection)
         $matched_responses=s$matched, $commands=s$commands,
         $checksum_failures=s$checksum_failures, $skipped_bytes=s$skipped,
         $gaps=s$gaps, $inspection_limited=s$limited]);
+    c$drone_log_ts=network_time();
     s$last_log = network_time();
     }
 

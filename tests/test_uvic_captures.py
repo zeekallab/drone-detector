@@ -22,8 +22,9 @@ def main():
             drone=tmp/'drone.log'
             rows=[json.loads(line) for line in drone.read_text().splitlines()] if drone.exists() else []
             if e['name'].startswith('Instruction_injection'):
+                assert all(row['protocol'] in ('tello-sdk','tello-binary') for row in rows),rows
+                rows=[row for row in rows if row['protocol']=='tello-sdk']
                 assert len(rows)==9,rows
-                assert all(row['protocol']=='tello-sdk' for row in rows),rows
                 byuid={}
                 commands=set()
                 for row in rows:
@@ -39,9 +40,9 @@ def main():
                     assert updates[0]['event_type']=='detection',updates
                     assert all(b['ts']-a['ts']>=60 for a,b in zip(updates,updates[1:])),updates
             else:
-                assert not rows,(e,rows)
+                assert rows and all(row['protocol']=='tello-binary' for row in rows),(e,rows)
             conns=[json.loads(x) for x in (tmp/'conn.log').read_text().splitlines()]
             assert any(c['proto']=='udp' and c['id.resp_p']==8889 and c.get('orig_bytes',0)>0 for c in conns),e
-    print('PASS: UVic SDK injection capture produces nine rate-limited Tello entries; three binary captures remain negative.')
+    print('PASS: UVic SDK injection capture produces nine rate-limited Tello entries; three binary captures are identified without false MAVLink/legacy-DJI classification.')
 
 if __name__=='__main__':main()

@@ -677,6 +677,7 @@ event connection_flipped(c: connection)
 
 function emit(c: connection)
     {
+    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
     local s = c$mavlink_state;
     if ( ! s$heartbeat || |s$evidence_frames| < minimum_evidence_messages ) return;
     if ( s?$last_log && network_time() - s$last_log < DroneDetector::log_interval ) return;
@@ -731,6 +732,7 @@ function emit(c: connection)
         }
     if ( |s$autopilots| == 0 ) delete rec$autopilot_software;
     DroneDetector::write_log(rec);
+    c$drone_log_ts=network_time();
     s$controls = table();
     s$indicators = table();
     s$last_log = network_time();

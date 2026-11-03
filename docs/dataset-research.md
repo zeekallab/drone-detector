@@ -93,3 +93,12 @@ The instruction-injection fixture produces nine rate-limited Tello SDK entries.
 The replay, manipulation and spoofing samples still produce no detections because
 their binary Tello protocol has not been implemented. This supersedes only the
 SDK portion of the v0.3.0 coverage-gap description; it is not an attack classifier.
+
+## v0.5.0 follow-up
+
+Binary Tello identification and replay-like/malformed control alerts now cover
+the reviewed manipulation captures. Optional radiotap deauthentication alerts
+cover the two password-cracking captures. These supersede the binary coverage
+gaps described in the earlier research above; they do not prove takeover or
+password cracking. See [validation](../validation/v0.5.0-results.md) and
+[wireless findings](password-cracking-review.md).
