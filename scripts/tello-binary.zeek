@@ -12,12 +12,20 @@ export {
     const replay_min_frames: count = 20 &redef;
     const replay_min_distinct: count = 5 &redef;
     const replay_min_fraction = 0.5 &redef;
+    const rapid_min_age = 10msec &redef;
+    const rapid_max_age = 2secs &redef;
+    const rapid_window = 10secs &redef;
+    const rapid_min_frames: count = 20 &redef;
+    const rapid_min_distinct: count = 10 &redef;
+    const rapid_max_entries: count = 256 &redef;
     const malformed_min_frames: count = 3 &redef;
     redef record DroneDetector::Info += {
         binary_control_frames: count &log &optional;
         binary_replayed_frames: count &log &optional;
         binary_replayed_distinct: count &log &optional;
         binary_malformed_control_frames: count &log &optional;
+        binary_rapid_replayed_frames: count &log &optional;
+        binary_rapid_replayed_distinct: count &log &optional;
         binary_tracking_limited: bool &log &optional;
     };
 }
@@ -25,6 +33,7 @@ export {
 global crc8_table: vector of count = vector();
 global crc16_table: vector of count = vector();
 
+type RapidRepeat: record { ts: time; key: string; };
 type Direction: record {
     valid: count &default=0;
     evidence: set[string];
@@ -33,6 +42,12 @@ type Direction: record {
     controls: count &default=0;
     repeats: count &default=0;
     malformed: count &default=0;
+    rapid_seen: table[string] of time &optional;
+    rapid_events: vector of RapidRepeat &optional;
+    rapid_keys: set[string] &optional;
+    rapid_repeats: count &default=0;
+    rapid_alert: bool &default=F;
+    rapid_pruned: time &optional;
 };
 type State: record {
     orig: Direction;
@@ -84,6 +99,8 @@ function emit(c: connection, s: State)
         if ( dir$repeats >= replay_min_frames && |dir$replayed| >= replay_min_distinct &&
              dir$controls > 0 && count_to_double(dir$repeats)/count_to_double(dir$controls) >= replay_min_fraction )
             add alerts["Replay-like control traffic: repeated older, checksum-valid Tello joystick messages"];
+        if ( dir$rapid_alert )
+            add alerts["Rapid replay-like control traffic: bursts of repeated checksum-valid Tello joystick messages"];
         if ( dir$malformed >= malformed_min_frames )
             add alerts["Malformed control traffic: repeated Tello joystick length or checksum failures"];
         }
@@ -95,6 +112,9 @@ function emit(c: connection, s: State)
         $binary_replayed_frames=s$orig$repeats+s$resp$repeats,
         $binary_replayed_distinct=|s$orig$replayed|+|s$resp$replayed|,
         $binary_malformed_control_frames=s$orig$malformed+s$resp$malformed);
+    rec$binary_rapid_replayed_frames=s$orig$rapid_repeats+s$resp$rapid_repeats;
+    rec$binary_rapid_replayed_distinct=(s$orig?$rapid_keys ? |s$orig$rapid_keys| : 0) +
+        (s$resp?$rapid_keys ? |s$resp$rapid_keys| : 0);
     if ( |alerts| > 0 ) rec$alert=alerts;
     DroneDetector::write_log(rec);
     c$drone_log_ts=network_time();
@@ -105,10 +125,53 @@ function emit(c: connection, s: State)
 function reset_window(d: Direction)
     {
     d$controls=0; d$repeats=0; d$malformed=0; d$replayed=set();
+    d$rapid_repeats=0; d$rapid_keys=set(); d$rapid_alert=F;
     local expired: set[string] = set();
     for ( key in d$seen )
         if ( network_time()-d$seen[key] > replay_max_age ) add expired[key];
     for ( key in expired ) delete d$seen[key];
+    }
+
+# Separate short-lived cache avoids exhausting the older-replay fingerprint budget.
+function observe_rapid(d: Direction, s: State, key: string)
+    {
+    if ( ! d?$rapid_seen ) d$rapid_seen=table();
+    if ( ! d?$rapid_events ) d$rapid_events=vector();
+    if ( ! d?$rapid_keys ) d$rapid_keys=set();
+    if ( ! d?$rapid_pruned || network_time()-d$rapid_pruned >= 1sec )
+        {
+        local expired: set[string]=set();
+        for ( k in d$rapid_seen )
+            if ( network_time()-d$rapid_seen[k] >= rapid_max_age ) add expired[k];
+        for ( k in expired ) delete d$rapid_seen[k];
+        d$rapid_pruned=network_time();
+        }
+    if ( key in d$rapid_seen )
+        {
+        local age=network_time()-d$rapid_seen[key];
+        if ( age >= rapid_min_age && age < rapid_max_age )
+            {
+            ++d$rapid_repeats;
+            if ( key in d$rapid_keys || |d$rapid_keys| < rapid_max_entries ) add d$rapid_keys[key];
+            else s$tracking_limited=T;
+            local recent: vector of RapidRepeat=vector();
+            local distinct: set[string]=set();
+            for ( i in d$rapid_events )
+                if ( network_time()-d$rapid_events[i]$ts <= rapid_window )
+                    {
+                    if ( |recent| < rapid_max_entries )
+                        { recent[|recent|]=d$rapid_events[i]; add distinct[d$rapid_events[i]$key]; }
+                    else s$tracking_limited=T;
+                    }
+            if ( |recent| < rapid_max_entries )
+                { recent[|recent|]=[$ts=network_time(),$key=key]; add distinct[key]; }
+            else s$tracking_limited=T;
+            d$rapid_events=recent;
+            if ( |recent| >= rapid_min_frames && |distinct| >= rapid_min_distinct ) d$rapid_alert=T;
+            }
+        }
+    if ( key in d$rapid_seen || |d$rapid_seen| < rapid_max_entries ) d$rapid_seen[key]=network_time();
+    else s$tracking_limited=T;
     }
 
 event udp_contents(c: connection, is_orig: bool, contents: string)
@@ -142,6 +205,7 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
     if ( stick && confirmed(d) )
         {
         ++d$controls;
+        observe_rapid(d,s,key);
         if ( key in d$seen )
             {
             local age=network_time()-d$seen[key];

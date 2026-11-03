@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0 — 2026-11-03
+
+- Add default rapid replay-like binary Tello joystick detection for short-delay
+  duplicates using a diverse-payload burst threshold and independent bounded cache.
+- Add interval rapid-repeat counters; retain existing older-replay/malformed
+  alerts and the shared minute logging gate without a session-end flush.
+- Validate all six Replay captures plus six manipulation and three normal-flight
+  comparisons; document capture-duplication ambiguity and lack of acceptance proof.
+
 ## 0.9.0 — 2026-11-03
 
 - Add default control source-port churn alerts for recent, validated SDK peer pairs.

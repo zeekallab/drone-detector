@@ -123,3 +123,9 @@ SDK maneuver history and command summaries now span UDP connections within an
 ordered drone/controller host pair. Earlier per-connection coverage statements
 above describe the earlier release. Source-port churn and earlier-port response
 context are now supported; see [Unauth review](unauth-review.md).
+
+## v0.10.0 Replay follow-up
+
+All six Replay captures now trigger the rapid replay-like control rule. Their
+short-delay payload repetitions did not meet the older replay-age threshold.
+See [Replay review](replay-review.md) for evidence, comparisons and limits.

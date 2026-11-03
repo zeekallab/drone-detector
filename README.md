@@ -1,6 +1,18 @@
-# Drone protocol detector — 0.9.0
+# Drone protocol detector — 0.10.0
 
-## What's new — v0.9.0
+## What's new — v0.10.0
+
+- **Rapid replay-like control alert:** detect bursts of repeated, checksum-valid
+  binary Tello joystick messages whose copies arrive 10 ms to under 2 seconds apart.
+- **Distinct-message threshold:** require 20 repeat observations involving at
+  least 10 distinct complete payloads within 10 seconds, on a confirmed direction.
+- **Replay coverage:** all six Replay captures now alert; they did not meet the
+  existing older-replay rule. No extra rows or rate-limit exceptions are introduced.
+- **Evidence and limits:** two new counters describe rapid repeats. Capture
+  duplication can resemble replay; this is not proof of accepted commands or takeover.
+  See [Replay review](docs/replay-review.md).
+
+## Earlier updates — v0.9.0
 
 - **Control source-port churn alert:** detect validated SDK commands using many
   source ports for the same drone/controller pair; enabled by default.
@@ -78,7 +90,7 @@
   are credited below and in the fixture documentation.
 
 See the [changelog](CHANGELOG.md) for release details and
-[v0.9.0 validation](validation/v0.9.0-results.md) for evidence and coverage limits.
+[v0.10.0 validation](validation/v0.10.0-results.md) for evidence and coverage limits.
 
 ## Overview
 
@@ -174,6 +186,61 @@ representing at least 50% of eligible control frames since the preceding log ent
 An identical payload must have been last seen 2–120 seconds earlier. Immediate
 retransmissions, sequence number zero, constant stick-axis values, repeated queries,
 and responses alone do not trigger this alert.
+
+### Rapid replay-like control traffic
+
+**Description:** A burst of repeated, checksum-valid Tello joystick messages
+can indicate rapid replay of control traffic. This complements the older-replay
+rule above, whose minimum age is two seconds.
+
+```json
+"alert": ["Rapid replay-like control traffic: bursts of repeated checksum-valid Tello joystick messages"],
+"binary_rapid_replayed_frames": 25,
+"binary_rapid_replayed_distinct": 25
+```
+
+The same-direction binary parser must first confirm three distinct frames with
+valid length, CRC8 and CRC16. Only joystick command `0x0050`, type `0x60`, sent
+toward a configured control port is eligible. A complete payload hash must recur
+**at least 10 milliseconds and less than two seconds after its last observation**.
+Within a rolling 10-second window, require at least **20 repeat observations**
+covering **10 distinct complete payloads**. An isolated duplicate, one repeating
+payload, sequence number zero, unchanged stick axes, invalid checksums, or generic
+repeated response/query traffic is insufficient. Copies under 10 ms apart are
+excluded; this does not eliminate every capture-duplication scenario.
+
+The detector latches a qualifying burst until the next eligible `drone.log`
+record, then clears the pending alert. The rolling evidence may span log intervals.
+`binary_rapid_replayed_frames` and `binary_rapid_replayed_distinct` count qualifying
+repeat observations/distinct payloads **since the preceding record**, so an alert
+can appear alongside counters lower than the rolling-window threshold. Distinct
+counts combine the two direction-local sets; they are not global unique packets.
+No session-end flush or extra alert emission bypasses the minute gate.
+
+```zeek
+redef DroneTelloBinary::rapid_min_age = 10msec;
+redef DroneTelloBinary::rapid_max_age = 2secs;
+redef DroneTelloBinary::rapid_window = 10secs;
+redef DroneTelloBinary::rapid_min_frames = 20;
+redef DroneTelloBinary::rapid_min_distinct = 10;
+redef DroneTelloBinary::rapid_max_entries = 256;
+```
+
+A separate bounded short-lived cache avoids interference from the older replay
+cache. Each direction retains at most 256 recent payload hashes, 256 rolling
+repeat observations, and 256 interval-distinct hashes by default. Expired payload
+hashes are pruned at most once per second on eligible traffic. Bounds can omit
+observations; `binary_tracking_limited` indicates that information was dropped.
+Use positive thresholds with minimum age below maximum age and sufficient cache
+capacity. Both rules remain per connection and worker, not across connections.
+
+**Interpretation:** delayed mirror duplication, retransmitting/replaying capture
+infrastructure, or sender behavior can imitate this pattern. Checksums validate
+integrity, not authorization or freshness. No drone responses are present in the
+six reviewed Replay files, so they cannot establish accepted commands or physical
+execution. Replays with modified payloads, unseen originals, changed connections,
+insufficient diversity or different timing can evade these thresholds.
+[Capture evidence and validation](docs/replay-review.md).
 
 ### Malformed control traffic
 

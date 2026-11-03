@@ -53,3 +53,10 @@ See [video findings](../../../docs/video-review.md).
 `tests/test_unauth_captures.py` with `ISOT_CAPTURE_ROOT` pointing to `Raw Data`.
 The suite also checks eight injection, six station-mode and three normal-flight
 captures. See [findings](../../../docs/unauth-review.md). No PCAPs are redistributed.
+
+## Expanded Replay review (v0.10.0)
+
+`replay-manifest.json` records all six original Replay members. Run
+`tests/test_replay_captures.py` with `ISOT_CAPTURE_ROOT` pointing to `Raw Data`.
+It checks six Replay, six Manipulation and three normal-flight captures.
+See [findings](../../../docs/replay-review.md). PCAPs are not redistributed.

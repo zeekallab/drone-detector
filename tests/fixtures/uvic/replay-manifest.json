@@ -1,0 +1,32 @@
+[
+  {
+    "member": "Raw Data/Replay/replay_1_5_22_10mins.pcap",
+    "bytes": 739569,
+    "sha256": "080204f744469c0779e47854560dcf9fbdc20f737c7eaf6c41176b247bbebf11"
+  },
+  {
+    "member": "Raw Data/Replay/replay_2_5_22_10mins.pcap",
+    "bytes": 856407,
+    "sha256": "b884627fc59d372ce034e7f90a399ed8832a47043fcce54b663204c7395ef4c2"
+  },
+  {
+    "member": "Raw Data/Replay/replay_3_5_22_10mins.pcap",
+    "bytes": 866527,
+    "sha256": "1c4d8d5d970dadf84f4893bb1f798aa543b5de7233b910cd56d97bc656d2cf2f"
+  },
+  {
+    "member": "Raw Data/Replay/replay_4_5_22_10mins.pcap",
+    "bytes": 711329,
+    "sha256": "fc8ff0d1a32168aece8c1e7ba5ebc840b93539f14e4f7c7c804e41cbd05a36bc"
+  },
+  {
+    "member": "Raw Data/Replay/replay_5_5_22_10mins.pcap",
+    "bytes": 787984,
+    "sha256": "91b9c86a8a7a9c68e8d1b3de27f11b55edca0fc3901201610bd5f517f3f85613"
+  },
+  {
+    "member": "Raw Data/Replay/replay_6_5_22_10mins.pcap",
+    "bytes": 718973,
+    "sha256": "c9fde8a54a6b00a8205ee2246494969bd2060bba618eb4e3bf6637bab0a02814"
+  }
+]
