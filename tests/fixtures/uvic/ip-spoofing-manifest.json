@@ -1,0 +1,52 @@
+[
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_1_5_17_5mins.pcap",
+    "bytes": 693202,
+    "sha256": "2c18d8ba486d072a2bc25c39cb020ad0e0da7f18e84d365b42e0dbb2241f24de"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_2_5_17_6mins.pcap",
+    "bytes": 740741,
+    "sha256": "e50bcb4e1208522e12f50e5aac8aede39e9a7544f4a37a2807bff631044ba103"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_3_5_17_3mins.pcap",
+    "bytes": 334864,
+    "sha256": "ed9da8fc6aaab89a9948a849d144af4ca2f707ade55abc39bb3f647d4a9c9121"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_4_5_17_1mins.pcap",
+    "bytes": 150812,
+    "sha256": "386e38eae776c5c87c0b923da5fd0527966fc648da6d16188174ca6b8123315c"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_5_5_17_8mins.pcap",
+    "bytes": 953175,
+    "sha256": "aa8c908ea190da24fd54f281f09407ce9767bc05d3867305cb288cfbda94a56a"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_6_5_17_10mins.pcap",
+    "bytes": 1330601,
+    "sha256": "1be7b51dc0332287f2c56325a8c8e9cb6261ce5ad60956d263e49e79d1ddf9b5"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_7_5_17_10mins.pcap",
+    "bytes": 1250065,
+    "sha256": "2567c9d15066b6538666c7aee830670f3a7720113428e97ca327a07a2ffe59a0"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_8_5_17_8mins.pcap",
+    "bytes": 1097956,
+    "sha256": "65d06bcb8d99ab40f301eed1e928f172a380588a1960ffebaa5f9cc274ecd823"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_9_5_17_6mins.pcap",
+    "bytes": 676346,
+    "sha256": "e07b85ae6b3bc82a9c1c052128a1381aec1823fa57383a004cbd415c3d793416"
+  },
+  {
+    "member": "Raw Data/IP Spoofing/IP_spoofing_10_5_17_3mins.pcap",
+    "bytes": 404704,
+    "sha256": "3301aea6f724467bea0ef1bdd05497ada5261d1a35e8493d9b329d33532b0d08"
+  }
+]

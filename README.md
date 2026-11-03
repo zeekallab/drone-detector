@@ -12,6 +12,14 @@
   duplication can resemble replay; this is not proof of accepted commands or takeover.
   See [Replay review](docs/replay-review.md).
 
+## Additional capture coverage — IP spoofing
+
+All ten UVic ISOT IP-spoofing captures already trigger the existing **replay-like
+control traffic** alert for checksum-valid Tello joystick messages. No additional
+spoofing rule or runtime complexity is needed for these samples. This detects the
+control pattern, not proof of a forged sender or takeover.
+[Findings, attribution and reproduction](docs/ip-spoofing-review.md).
+
 ## Earlier updates — v0.9.0
 
 - **Control source-port churn alert:** detect validated SDK commands using many
