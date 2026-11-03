@@ -28,7 +28,6 @@ export {
         # JSON array, since Zeek log writers cannot log vectors of records.
         telemetry: string &log &optional;
         control_activity: string &log &optional;
-        anomaly_indicators: string &log &optional;
         activity_limited: bool &log &optional;
         telemetry_limited: bool &log &optional;
         simulation_observed: bool &log &optional;
@@ -708,9 +707,22 @@ function emit(c: connection)
     local controls: vector of Control = vector();
     for ( key in s$controls ) controls[|controls|] = s$controls[key];
     if ( |controls| > 0 ) rec$control_activity = to_json(controls);
-    local indicators: vector of Indicator = vector();
-    for ( key in s$indicators ) indicators[|indicators|] = s$indicators[key];
-    if ( |indicators| > 0 ) rec$anomaly_indicators = to_json(indicators);
+    for ( key in s$indicators )
+        {
+        local kind = s$indicators[key]$kind;
+        local description = "";
+        if ( kind == "position_discontinuity" )
+            description = "mavlink anomaly indicator - position discontinuity";
+        else if ( kind == "altitude_discontinuity" )
+            description = "mavlink anomaly indicator - Altitude discontinuity";
+        else if ( kind == "multiple_control_system_ids" )
+            description = "mavlink anomaly indicator - Multiple control system IDs";
+        if ( description != "" )
+            {
+            if ( ! rec?$alert ) rec$alert = set();
+            add rec$alert[description];
+            }
+        }
     rec$activity_limited = s$activity_limited;
     if ( ! DroneDetector::include_diagnostics )
         {

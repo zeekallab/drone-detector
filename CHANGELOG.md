@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 — 2026-11-03
+
+- Move all three MAVLink anomaly descriptions into the shared `alert` field.
+- Remove the separate `anomaly_indicators` output field; migrate searches to `alert`.
+- Preserve anomaly thresholds, bounded tracking, interval clearing and log rate limits.
+- Add brief README enablement instructions and visibility requirements for optional
+  ARP interception and Wi-Fi deauthentication modules.
+
 ## 0.10.0 — 2026-11-03
 
 - Add default rapid replay-like binary Tello joystick detection for short-delay

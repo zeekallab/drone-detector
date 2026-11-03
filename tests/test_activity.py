@@ -33,15 +33,23 @@ def main():
     # A rapid geographic/altitude discontinuity is retained until the minute update.
     times=[0,1,10,20,30,40,50,60]
     rows,_=run(pcap([good+position(),position(4,lat=382418612,alt=239580)]+[message(i+10) for i in range(6)],times=times),live=True)
-    inds=json.loads(rows[-1]['anomaly_indicators'])
-    assert {a['kind'] for a in inds}=={'position_discontinuity','altitude_discontinuity'},inds
-    assert all(a['max_value']>a['threshold'] and a['system_id']==1 for a in inds),inds;cases+=1
+    assert set(rows[-1]['alert']) == {
+        'mavlink anomaly indicator - position discontinuity',
+        'mavlink anomaly indicator - Altitude discontinuity'}, rows
+    assert 'alert' not in rows[0] and all('anomaly_indicators' not in r for r in rows), rows
+    assert len(rows) == 2 and rows[1]['ts'] - rows[0]['ts'] >= 60, rows
+    cases+=1
+    # Alerts clear after emission rather than reappearing in a quiet interval.
+    packets=[good+position(),position(4,lat=382418612,alt=239580)]+[message(i+10) for i in range(12)]
+    rows,_=run(pcap(packets,times=[0,1]+list(range(10,130,10))),live=True)
+    assert len(rows)==3 and 'alert' in rows[1] and 'alert' not in rows[2],rows
+    cases+=1
     # Normal motion/rounding, source switches and long observation gaps don't trigger.
     for payloads,times in [([good+position(),position(4,lat=372418622,alt=139590)],[0,1]),
                            ([good+gps(),position(4,lat=382418612)],[0,1]),
                            ([good+position(),message(4),position(5,lat=382418612)],[0,20,40])]:
         rows,_=run(pcap(payloads,times=times),'redef DroneDetector::log_interval = 0secs;\n',live=True)
-        assert all('anomaly_indicators' not in r for r in rows),rows
+        assert all('alert' not in r for r in rows),rows
     cases+=1
     # Invalid CRC command contributes no activity. Normal signed framing isn't trusted.
     bad=control();bad=bad[:-1]+bytes([bad[-1]^1])
@@ -61,7 +69,7 @@ def main():
     assert a['parameter_id']=='RTL_ALT' and a['parameter_value_bits']=='0x43898000' and a['target_system']==1,a;cases+=1
     # Indicators can be disabled without suppressing telemetry itself.
     rows,_=run(pcap([good+position(),position(4,lat=382418612)],times=[0,1]),'redef DroneDetector::log_interval = 0secs;\nredef DroneMAVLink::detect_telemetry_anomalies = F;\n',live=True)
-    assert all('anomaly_indicators' not in r for r in rows) and 'telemetry' in rows[-1],rows;cases+=1
+    assert all('alert' not in r for r in rows) and 'telemetry' in rows[-1],rows;cases+=1
     # RC override, manual input and offboard setpoints retain their true targets.
     control_messages=[
         message(30,70,struct.pack('<8HBB',1500,*([65535]*7),1,1),124,sysid=255),
@@ -78,18 +86,17 @@ def main():
     def mode(sysid,compid=230,target=1):
         return message(40,11,struct.pack('<IBB',6,target,1),89,sysid=sysid,compid=compid)
     rows,_=run(pcap([good+mode(255)+mode(255,0)]),live=True)
-    assert 'anomaly_indicators' not in rows[0],rows
+    assert 'alert' not in rows[0],rows
     rows,_=run(pcap([good+mode(255)+mode(254)]),live=True)
-    indicators=json.loads(rows[0]['anomaly_indicators'])
-    assert indicators[0]['kind']=='multiple_control_system_ids' and indicators[0]['system_id']==1 and indicators[0]['max_value']==2,indicators
+    assert rows[0]['alert']==['mavlink anomaly indicator - Multiple control system IDs'],rows
     rows,_=run(pcap([good+mode(255,target=1)+mode(254,target=2)]),live=True)
-    assert 'anomaly_indicators' not in rows[0],rows;cases+=1
+    assert 'alert' not in rows[0],rows;cases+=1
     # ACKs are response evidence, not requests or competing controllers.
     ack=message(9,77,struct.pack('<HB',400,0),143,sysid=1)
     rows,_=run(pcap([good+control()+ack]),live=True)
     actions=json.loads(rows[0]['control_activity'])
     assert any(a.get('ack_result')==0 and a['command_id']==400 for a in actions),actions
-    assert 'anomaly_indicators' not in rows[0],rows;cases+=1
+    assert 'alert' not in rows[0],rows;cases+=1
     print(f'PASS: {cases} control/anomaly scenarios (CRC, window aggregation, trust scope, thresholds and bounds).')
 
 if __name__=='__main__':main()

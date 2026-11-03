@@ -1,6 +1,40 @@
-# Drone protocol detector — 0.10.0
+# Drone protocol detector — 0.11.0
 
-## What's new — v0.10.0
+## What's new — v0.11.0
+
+- **One place for detections:** all three MAVLink anomaly indicators now appear
+  as readable descriptions in `alert`, alongside the existing detections.
+- **Simpler output:** removes the separate `anomaly_indicators` field. Update
+  searches that used it to search `alert`; thresholds and minute limits are unchanged.
+- **Optional alerts:** see the enablement instructions below for ARP interception
+  and wireless deauthentication. Both remain opt-in.
+
+## Enabling optional ARP and Wi-Fi alerts
+
+Add the appropriate line to your local Zeek policy or custom bundle entry script,
+using the actual installed package path. Each module also loads the main detector:
+
+```zeek
+# ARP interception: only for one IPv4 broadcast domain visible on the same worker.
+@load /path/to/drone-detector/scripts/arp.zeek
+
+# Wi-Fi deauthentication: only for raw radiotap/802.11 management-frame input.
+@load /path/to/drone-detector/scripts/wifi.zeek
+```
+
+Enable only the module(s) whose capture requirements your deployment meets, then
+reload/redeploy the policy through your normal Zeek or Corelight bundle workflow.
+Remove the corresponding line to disable it. Both write detections into `alert`
+in `drone.log`.
+
+**ARP:** routed feeds may omit ARP; do not combine overlapping networks. Legitimate
+proxy ARP can resemble interception. [Details and exclusions](#arp-interception-pattern-optional).
+**Wi-Fi:** an ordinary Ethernet mirror lacks the required management frames.
+This is our custom `wifi.zeek`, not a built-in Zeek script; raw-packet processing
+adds overhead. Live Corelight compatibility/performance for these optional modules
+is unvalidated. [Details and capture testing](#wireless-deauthentication-burst-optional).
+
+## Earlier updates — v0.10.0
 
 - **Rapid replay-like control alert:** detect bursts of repeated, checksum-valid
   binary Tello joystick messages whose copies arrive 10 ms to under 2 seconds apart.
@@ -180,6 +214,9 @@ The optional **`alert`** field in `drone.log` is an array of human-readable
 findings. It is omitted when no alert threshold is met; a record can contain
 multiple alert descriptions. These are **behavioral investigation signals**,
 not proof that a drone accepted a command or that a takeover/password crack succeeded.
+
+MAVLink position, altitude and multiple-controller findings also use this field;
+see [MAVLink anomaly alerts](#mavlink-anomaly-alerts) for their exact descriptions.
 
 ### Replay-like control traffic
 
@@ -666,25 +703,25 @@ Counts include duplicate/forwarded observations. Request parameters beyond those
 listed are not decoded; changed mission items or setpoints can share a summary
 bucket. This is a bounded activity summary, not a full command audit trail.
 
-`anomaly_indicators` is a JSON-encoded array of **heuristic signals**, not a takeover
-verdict. It currently supports:
+### MAVLink anomaly alerts
 
-| `kind` | Trigger / interpretation |
+These heuristic signals appear in the shared `alert` array, using these exact
+strings. They are not a takeover verdict. The separate `anomaly_indicators`
+output field was removed in v0.11.0; no replacement log field is added.
+
+| Alert text | Trigger / interpretation |
 |---|---|
-| `position_discontinuity` | Same source and position message type moves >=100 m with implied horizontal speed >100 m/s |
-| `altitude_discontinuity` | Same source and position message type changes altitude >=20 m with implied vertical speed >30 m/s |
-| `multiple_control_system_ids` | More than one source MAVLink system ID sends selected requests to the same non-broadcast target within 120 seconds, on this connection |
+| `mavlink anomaly indicator - position discontinuity` | Same source and position message type moves >=100 m with implied horizontal speed >100 m/s |
+| `mavlink anomaly indicator - Altitude discontinuity` | Same source and position message type changes altitude >=20 m with implied vertical speed >30 m/s |
+| `mavlink anomaly indicator - Multiple control system IDs` | More than one source MAVLink system ID sends selected requests to the same non-broadcast target within 120 seconds, on this connection |
 
 Position comparisons use successive observations 0.1–30 seconds apart, not just
-the logged minute snapshots. Duplicate/tiny intervals, long gaps and changes
-between GPS and fused position sources are excluded. Indicators accumulate
-between log entries, preserving a brief inconsistency until the next eligible
-update. Each has `observations`, `first_seen`, `last_seen`, `max_value` and
-`threshold`. Values are m/s for position/altitude signals and a count of source
-system IDs for controller signals. For the latter, `system_id` is the **target**
-and `component_id=0` means component unspecified; otherwise they identify the
-telemetry source. Different components of one controller system do not alone
-trigger the multiple-controller signal.
+logged minute snapshots. Duplicate/tiny intervals, long gaps and changes between
+GPS and fused position sources are excluded. Findings accumulate until the next
+eligible record and clear after emission. Repeated findings of the same kind
+produce one description per record. Different components of one controller system
+do not alone trigger the multiple-controller signal. Per-indicator counters,
+thresholds and source identities are no longer exported as a separate JSON field.
 
 Thresholds are starting points, **not calibrated attack classifiers**. Legitimate
 GPS/estimator resets, simulation changes, fast aircraft or multiple ground stations
@@ -692,7 +729,7 @@ can trigger them. Smooth spoofing, spoofing an existing controller ID, replay
 without a discontinuity and encrypted/unobserved links can evade them. Detection
 requires a protocol-confirmed connection; an isolated one-way command flow without
 a valid heartbeat may not qualify. No cryptographic signature/replay validation,
-Wi-Fi deauthentication detection, containment or real-time alert bypass is added.
+containment or real-time alert bypass is added by the MAVLink module.
 
 The minute limit also bounds how quickly suspicious activity appears. If a
 connection ends before another eligible update, pending activity is **not flushed**.
@@ -721,15 +758,13 @@ redef DroneMAVLink::max_activity_values = 64;
 To examine signals in Splunk:
 
 ```spl
-index=zee-corelight _path=drone anomaly_indicators=*
-| spath input=anomaly_indicators path={} output=indicator
-| mvexpand indicator
-| spath input=indicator
-| table _time uid kind system_id component_id observations max_value threshold
+index=zee-corelight _path=drone alert=*
+| table _time uid protocol alert
 ```
 
-For control requests, apply the same expansion to `control_activity`. Correlate
-with the controller/operator and flight context before concluding interference.
+For MAVLink findings only, filter `alert="mavlink anomaly indicator - *"`.
+Control request details remain in `control_activity`; correlate with the
+controller/operator and flight context before concluding interference.
 
 ### Optional diagnostic fields
 
