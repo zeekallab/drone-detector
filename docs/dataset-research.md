@@ -102,3 +102,11 @@ cover the two password-cracking captures. These supersede the binary coverage
 gaps described in the earlier research above; they do not prove takeover or
 password cracking. See [validation](../validation/v0.5.0-results.md) and
 [wireless findings](password-cracking-review.md).
+
+## v0.7.0 injection follow-up
+
+All eight injection captures were reviewed. The default SDK parser now reports
+repetitive opposing maneuver requests and response counts; six captures meet
+the behavioral threshold. The two varied-command captures remain unflagged
+because command syntax does not establish authorization. See
+[injection findings](injection-review.md).

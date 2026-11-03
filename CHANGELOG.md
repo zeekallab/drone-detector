@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 — 2026-11-03
+
+- Add default-enabled repetitive opposing Tello SDK maneuver detection and axis
+  evidence in the existing `alert` field, with bounded rolling history.
+- Record recognized SDK response counts on confirmed flows; replies alone do not
+  establish identity and are not uniquely matched command execution outcomes.
+- Retain minute-limited logging; responses can now drive an eligible update.
+- Review all eight UVic injection captures, document the two unflagged cases and
+  legitimate automation ambiguity, and add synthetic and real-capture checks.
+
 ## 0.6.0 — 2026-11-03
 
 - Add optional ARP interception-pattern detection, correlated with confirmed drone

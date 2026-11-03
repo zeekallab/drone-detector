@@ -29,3 +29,12 @@ instruction-injection capture; binary Tello identification in replay/manipulatio
 spoofing samples. These tests do not equate classification with successful takeover.
 Expanded optional tests use the extracted archive via `tests/test_isot_alerts.py`.
 Never replay attack captures onto a live drone network; tests read files offline.
+
+## Expanded injection review (v0.7.0)
+
+`injection-manifest.json` records the eight source archive members, sizes and
+SHA-256 hashes used for the expanded review. The files remain external; this
+repository does not redistribute them. Run `tests/test_injection_captures.py`
+with `ISOT_CAPTURE_ROOT` pointing to the extracted `Raw Data` directory. Six
+files meet the repetitive-maneuver threshold; the first two are identified as
+SDK activity but remain unflagged. See [findings](../../../docs/injection-review.md).

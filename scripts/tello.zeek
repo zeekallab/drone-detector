@@ -9,9 +9,19 @@ export {
     const max_inspected_bytes: count = 1048576 &redef;
     const max_known_pairs: count = 1024 &redef;
     const correlation_age = 120 secs &redef;
+    const maneuver_window = 60secs &redef;
+    const maneuver_min_commands: count = 10 &redef;
+    const maneuver_min_reversals: count = 8 &redef;
+    const maneuver_min_each_direction: count = 4 &redef;
+    const maneuver_min_span = 10secs &redef;
+    const maneuver_max_samples: count = 128 &redef;
     redef record DroneDetector::Info += {
         drone_host: addr &log &optional;
         controller_host: addr &log &optional;
+        sdk_repetitive_axes: set[string] &log &optional;
+        sdk_ok_responses: count &log &optional;
+        sdk_error_responses: count &log &optional;
+        sdk_unknown_command_responses: count &log &optional;
     };
 }
 
@@ -25,6 +35,7 @@ type Activity: record {
     last_seen: time;
     observations: count;
 };
+type Maneuver: record { ts: time; positive: bool; };
 type State: record {
     valid: count &default=0;
     orig: count &default=0;
@@ -40,6 +51,12 @@ type State: record {
     telemetry: string &optional;
     telemetry_ts: time &optional;
     activity: table[string] of Activity;
+    maneuvers: table[string] of vector of Maneuver;
+    repetitive_axes: set[string];
+    has_commands: bool &default=F;
+    ok_responses: count &default=0;
+    error_responses: count &default=0;
+    unknown_responses: count &default=0;
 };
 redef record connection += { tello_state: State &optional; };
 
@@ -112,6 +129,41 @@ function sdk_command(data: string): bool
     return F;
     }
 
+# Runs only on grammar-validated commands correlated with recent SDK state.
+function observe_maneuver(s: State, data: string)
+    {
+    local words=split_string(data, / /);
+    if ( |words| != 2 ) return;
+    local verb=words[0];
+    local axis=verb in set("forward","back") ? "forward-back" :
+        (verb in set("left","right") ? "left-right" :
+        (verb in set("up","down") ? "up-down" :
+        (verb in set("cw","ccw") ? "yaw" : "")));
+    if ( axis == "" || maneuver_max_samples == 0 ) return;
+    if ( axis !in s$maneuvers ) s$maneuvers[axis]=vector();
+    local old=s$maneuvers[axis];
+    # Suppress near-simultaneous packet duplicates; this is not flood detection.
+    if ( |old| > 0 && network_time()-old[|old|-1]$ts < 250msec ) return;
+    local recent: vector of Maneuver=vector();
+    for ( i in old )
+        if ( network_time()-old[i]$ts <= maneuver_window )
+            {
+            if ( |old|-i < maneuver_max_samples ) recent[|recent|]=old[i];
+            else s$activity_limited=T;
+            }
+    recent[|recent|]=[$ts=network_time(),$positive=verb in set("forward","left","up","cw")];
+    s$maneuvers[axis]=recent;
+    if ( |recent| < maneuver_min_commands || network_time()-recent[0]$ts < maneuver_min_span ) return;
+    local positive: count=0; local negative: count=0; local reversals: count=0;
+    for ( i in recent )
+        {
+        if ( recent[i]$positive ) ++positive; else ++negative;
+        if ( i > 0 && recent[i]$positive != recent[i-1]$positive ) ++reversals;
+        }
+    if ( positive >= maneuver_min_each_direction && negative >= maneuver_min_each_direction &&
+         reversals >= maneuver_min_reversals ) add s$repetitive_axes[axis];
+    }
+
 function emit(c: connection, s: State)
     {
     if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
@@ -125,9 +177,22 @@ function emit(c: connection, s: State)
     local activities: vector of Activity = vector();
     for ( command in s$activity ) activities[|activities|]=s$activity[command];
     if ( |activities| > 0 ) rec$control_activity = to_json(activities);
+    if ( |s$repetitive_axes| > 0 )
+        {
+        rec$alert=set("Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests");
+        rec$sdk_repetitive_axes=s$repetitive_axes;
+        }
+    if ( s$ok_responses+s$error_responses+s$unknown_responses > 0 )
+        {
+        rec$sdk_ok_responses=s$ok_responses;
+        rec$sdk_error_responses=s$error_responses;
+        rec$sdk_unknown_command_responses=s$unknown_responses;
+        }
     DroneDetector::write_log(rec);
     c$drone_log_ts=network_time();
     s$activity = table();
+    s$repetitive_axes=set();
+    s$ok_responses=0; s$error_responses=0; s$unknown_responses=0;
     s$last_log = network_time();
     }
 
@@ -136,7 +201,7 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
     local sp = is_orig ? c$id$orig_p : c$id$resp_p;
     local dp = is_orig ? c$id$resp_p : c$id$orig_p;
     if ( sp !in command_ports && dp !in command_ports && dp !in state_ports ) return;
-    if ( ! c?$tello_state ) c$tello_state = State($budget_start=network_time(),$activity=table());
+    if ( ! c?$tello_state ) c$tello_state = State($budget_start=network_time(),$activity=table(),$maneuvers=table(),$repetitive_axes=set());
     local s = c$tello_state;
     if ( s$confirmed && network_time() - s$budget_start >= 60secs )
         { s$inspected=0; s$budget_start=network_time(); }
@@ -170,8 +235,22 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
     else
         {
         if ( dp in state_ports ) s$valid=0;
+        # Response text supplies context only on an already confirmed command flow.
+        if ( s$confirmed && s$has_commands && s?$drone && source == s$drone && destination == s$controller &&
+             sp in command_ports && [source,destination] in known_pairs &&
+             network_time()-known_pairs[source,destination] <= correlation_age && |data| <= 256 &&
+             (data == "ok" || /^error( |$)/ in data || /^unknown command:/ in data) )
+            {
+            if ( data == "ok" ) ++s$ok_responses;
+            else if ( /^unknown command:/ in data ) ++s$unknown_responses;
+            else ++s$error_responses;
+            if ( is_orig ) ++s$orig; else ++s$resp;
+            emit(c,s); return;
+            }
         if ( ! sdk_command(data) || dp !in command_ports || [destination,source] !in known_pairs ||
              network_time() - known_pairs[destination,source] > correlation_age ) return;
+        s$has_commands=T;
+        observe_maneuver(s,data);
         s$confirmed=T; s$drone=destination; s$controller=source;
         if ( data in s$activity )
             { ++s$activity[data]$observations; s$activity[data]$last_seen=network_time(); }

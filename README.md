@@ -1,6 +1,17 @@
-# Drone protocol detector — 0.6.0
+# Drone protocol detector — 0.7.0
 
-## What's new — v0.6.0
+## What's new — v0.7.0
+
+- **Repetitive maneuver alert:** flag sustained opposing Tello SDK movement or
+  rotation requests on a command flow correlated with recent drone telemetry.
+  Enabled in the default package; no additional module is needed.
+- **Response context:** count observed `ok`, `error` and `unknown command`
+  replies without treating them as proof of a successful maneuver or takeover.
+- **Injection capture review:** six of eight UVic injection captures meet the
+  behavioral rule; two have ordinary-looking command sequences that remain
+  unflagged. See [findings and limitations](docs/injection-review.md).
+
+## Earlier updates — v0.6.0
 
 - **Optional MITM signal:** correlate repeated reciprocal ARP claims with a
   confirmed drone flow and append an **ARP interception pattern** to `alert`.
@@ -42,7 +53,7 @@
   are credited below and in the fixture documentation.
 
 See the [changelog](CHANGELOG.md) for release details and
-[v0.6.0 validation](validation/v0.6.0-results.md) for evidence and coverage limits.
+[v0.7.0 validation](validation/v0.7.0-results.md) for evidence and coverage limits.
 
 ## Overview
 
@@ -64,7 +75,7 @@ airborne, or carrying out an attack.
 
 The optional **`alert`** field in `drone.log` is an array of human-readable
 findings. It is omitted when no alert threshold is met; a record can contain
-both control-traffic alerts. These are **suspected interference indicators**,
+multiple alert descriptions. These are **behavioral investigation signals**,
 not proof that a drone accepted a command or that a takeover/password crack succeeded.
 
 ### Replay-like control traffic
@@ -138,6 +149,57 @@ The rate limit is once per minute per BSSID. Tracking is bounded; a sticky
 # Explicit opt-in, from a separate output directory:
 zeek -r /path/to/radiotap-capture.pcap /path/to/drone-detector/scripts/wifi.zeek LogAscii::use_json=T
 ```
+
+### Repetitive maneuver commands
+
+**Description:** Sustained opposing movement or rotation requests can indicate
+scripted control, including command injection. Authorized automation or deliberate
+pilot maneuvers can produce exactly the same pattern. The alert describes the
+requests; it does not establish unauthorized access or actual aircraft motion.
+
+```json
+"alert": ["Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests"],
+"sdk_repetitive_axes": ["forward-back", "yaw"]
+```
+
+The default package evaluates grammar-valid SDK commands only after three valid
+SDK state messages establish a recent drone/controller pair. Within a rolling
+60-second window on one connection and axis, it requires at least 10 sampled
+commands, eight direction changes, four commands in each direction, and a span
+of at least 10 seconds. Commands less than 250 milliseconds apart on the same
+axis are excluded from pattern sampling. Axes are `forward-back`, `left-right`,
+`up-down`, and `yaw` (`cw`/`ccw`). Command magnitudes may differ.
+
+Findings are retained until the next eligible record, then cleared. The rolling
+command history remains available for ongoing-pattern detection. This preserves
+the existing minute limit and no-session-end-flush behavior. `control_activity`
+already summarizes exact observed requests. `sdk_repetitive_axes` identifies
+which pattern met the threshold since the previous emitted record.
+
+On confirmed SDK flows, `sdk_ok_responses`, `sdk_error_responses`, and
+`sdk_unknown_command_responses` count recognized replies since the last emitted
+record. The fields are omitted when no reply was counted. Reply-only traffic
+cannot establish identity. These are observed response counts, not uniquely
+matched command outcomes: UDP duplication/loss and absent SDK transaction IDs
+prevent reliable request-to-response attribution. They do not independently
+raise an alert or prove physical execution.
+
+```zeek
+redef DroneTello::maneuver_window = 60secs;
+redef DroneTello::maneuver_min_commands = 10;
+redef DroneTello::maneuver_min_reversals = 8;
+redef DroneTello::maneuver_min_each_direction = 4;
+redef DroneTello::maneuver_min_span = 10secs;
+redef DroneTello::maneuver_max_samples = 128;
+```
+
+Keep thresholds positive and sample capacity large enough for them. History is
+bounded to 128 samples per axis per connection by default; `activity_limited`
+warns of omitted command information. Comparisons do not span connections or
+workers. Encrypted traffic, command-only captures without recent SDK state,
+single dangerous commands, `rc` streaming, and other unsupported command forms
+are outside this rule. Recent telemetry identifies a peer pair, not a trusted or
+authenticated controller. [Review and validation](docs/injection-review.md).
 
 ### ARP interception pattern (optional)
 

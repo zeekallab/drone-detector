@@ -1,0 +1,42 @@
+[
+  {
+    "member": "Raw Data/Injection/Instruction_injection_1_5_13_5mins.pcap",
+    "bytes": 737386,
+    "sha256": "2cc86af66751933e68b8f34852f80f011cf3fbe4360cf6bc62a802461a9dca60"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_2_5_13_7mins.pcap",
+    "bytes": 1143353,
+    "sha256": "10b236576639a2da8a2829086bb2f1ba75cdd445125f8fdbc6f311fa344a8e01"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_3_5_13_10mins.pcap",
+    "bytes": 1231054,
+    "sha256": "73186ba5e98afef814c15173de6de1285121eb82a83aa66598dbc798fd3cf1e9"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_4_5_13_6mins.pcap",
+    "bytes": 895071,
+    "sha256": "1e2fe0e1a8a3513c5ff2c06a6ba0f0c61ae749ca90b725ab900953defb10d16b"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_5_5_13_10mins.pcap",
+    "bytes": 1494434,
+    "sha256": "d5a0ea8b0dc27edcb230b4bef6e259c240bde6e234a939090851625738456eae"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_6_5_14_10mins.pcap",
+    "bytes": 1411135,
+    "sha256": "5efc50c4d3b6697daaa7902146236b837a27b0b5ca1e2bb4a4cc4c917eb12ee4"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_7_5_14_7mins.pcap",
+    "bytes": 918306,
+    "sha256": "31f12bc74c1660e24c3ff39b61d58792056bca4769280ebc912d61cfbddf9c10"
+  },
+  {
+    "member": "Raw Data/Injection/Instruction_injection_8_5_14_4mins.pcap",
+    "bytes": 630688,
+    "sha256": "9b205dbc40e66088b15befd14ae9032330b5ddccacbdc4374e6e8a74559927e1"
+  }
+]
