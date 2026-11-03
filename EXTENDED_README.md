@@ -1,8 +1,14 @@
-# Drone detector — extended documentation (v0.12.0)
+# Drone detector — extended documentation (v0.12.1)
 
 [Back to the project overview](README.md)
 
-## What's new — v0.12.0
+## What's new — v0.12.1
+
+Tello SDK flight telemetry is trimmed to height, time-of-flight distance and
+battery status, with original values and units. All existing detection, freshness
+and rate-limit behavior is retained. MAVLink output is unchanged.
+
+## Earlier updates — v0.12.0
 
 - **Readable flight telemetry:** renames `telemetry` to `flight_telemetry`.
   MAVLink output groups GPS coordinates, sea-level `altitude` in meters, `motion`,
@@ -884,13 +890,19 @@ state detection still works but command correlation may be unavailable. Command
 traffic before state confirmation, or without recent state, is not classified.
 
 Tello writes `protocol=tello-sdk`, `likely_manufacturer=DJI/Ryze`, `drone_host`,
-and `controller_host` in the same rate-limited `drone.log`. Its `flight_telemetry` JSON
-array includes battery percentage, height/tof in cm, pitch/roll/yaw in degrees,
-and raw barometer, axis velocity and motor-time values. The SDK state format
-provides **no global GPS coordinates**, and yaw is not labeled as a true compass
-heading. Raw fields deliberately avoid assuming units/reference frames absent
-or ambiguous in the documentation. Tello telemetry uses host identity rather
-than MAVLink system/component IDs.
+and `controller_host` in the same rate-limited `drone.log`. Its `flight_telemetry`
+JSON array contains only `height_cm`, `tof_distance_cm`, and
+`battery_status: [{"remaining_pct": 92}]` (example percentage). Height and
+sensor distance retain their SDK centimeter values, and battery retains its
+percentage. No unit conversion, rounding, calculated motion, or battery ID is added.
+Height is not presented as sea-level altitude, and sensor distance is not a
+guaranteed ground-clearance measurement.
+
+The repeated host IP, observation timestamp, source label, barometer, attitude,
+axis velocities and motor time are omitted from the displayed telemetry. The
+parser still validates the state message structure; its internal timestamp still
+controls freshness. GPS, sea-level altitude and a flight mode are not supplied
+by this SDK state message and are not fabricated. MAVLink output is unchanged.
 
 `control_activity` groups recognized command text with source/destination IP,
 first/last observation time and counts. Supported commands include SDK entry,

@@ -31,7 +31,7 @@ def main():
                     byuid.setdefault(row['uid'],[]).append(row)
                     if 'flight_telemetry' in row:
                         t=json.loads(row['flight_telemetry'])[0]
-                        assert 0<=t['battery_remaining_pct']<=100 and 'latitude' not in t,t
+                        assert set(t)=={'height_cm','tof_distance_cm','battery_status'} and 0<=t['battery_status'][0]['remaining_pct']<=100,t
                         assert row['drone_host']=='192.168.10.1',row
                     if 'control_activity' in row:
                         commands.update(a['command'] for a in json.loads(row['control_activity']))

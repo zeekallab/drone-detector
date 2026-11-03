@@ -8,15 +8,18 @@ Logs on confirmation and then at most once per minute per connection (SDK comman
 summaries are limited per host pair). Traffic can also come from simulators or
 replays; detection does not prove a drone is airborne or being taken over.
 
-## Latest changes — v0.12.0
+## Latest changes — v0.12.1
 
-- **Simpler flight information:** `flight_telemetry` replaces `telemetry`, with
-  compact MAVLink GPS, sea-level altitude, motion, battery status and flight mode.
-- **Less clutter:** removes displayed timestamps, armed state and home-relative
-  height. Motion speeds round to two decimals, with a signed 0.01 minimum for
-  tiny nonzero readings; detection retains original precision.
-- **One place for detections:** the `alert` field includes MAVLink anomaly findings
-  alongside control-traffic alerts. [Full change history](CHANGELOG.md).
+Tello `flight_telemetry` now contains only height, time-of-flight distance, and
+battery percentage, preserving original units without conversions:
+
+```json
+[{"height_cm":70,"tof_distance_cm":103,"battery_status":[{"remaining_pct":92}]}]
+```
+
+The repeated host IP, timestamp and other SDK measurements are omitted from this
+field. MAVLink telemetry and existing detections are unchanged.
+[Full change history](CHANGELOG.md).
 
 ## What it reports
 

@@ -21,7 +21,7 @@ def main():
     rows,conns=run(pcap([STATE]*3,sport=8889,dport=8890),live=True)
     assert len(rows)==1 and rows[0]['protocol']=='tello-sdk' and rows[0]['orig_messages']==3,rows
     t=json.loads(rows[0]['flight_telemetry'])[0]
-    assert t['battery_remaining_pct']==47 and t['height_cm']==25 and t['yaw_deg']==-7,t
+    assert t=={'height_cm':25,'tof_distance_cm':10,'battery_status':[{'remaining_pct':47}]},t
     assert 'latitude' not in t and conns[0]['drone_protocol']=='tello-sdk',conns;cases+=1
     for payloads in ([STATE]*2,[b'ok']*5,[b'command']*5,[b'takeoff']*5,[b'\xcc\xb0\x00\x7f']*5,
                      [STATE.replace(b'bat:47',b'bat:101')]*3,[STATE.replace(b'h:25;',b'')]*3,

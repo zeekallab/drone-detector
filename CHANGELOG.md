@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.1 — 2026-11-03
+
+- Trim Tello SDK flight_telemetry to height_cm, tof_distance_cm and battery_status
+  containing remaining_pct. Preserve original numeric values without conversions.
+- Remove redundant identity/timestamp and other SDK measurements from presentation;
+  preserve state validation, freshness, detection and rate limits. MAVLink is unchanged.
+
 ## 0.12.0 — 2026-11-03
 
 - Replace the main README with a concise overview; preserve full documentation in EXTENDED_README.md.

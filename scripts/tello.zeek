@@ -109,21 +109,11 @@ function observe_port(s: State, p: port)
     if ( |s$source_ports| >= churn_min_ports && network_time()-oldest >= churn_min_span ) s$churn=T;
     }
 
+type BatteryStatus: record { remaining_pct: double; };
 type Telemetry: record {
-    drone_host: addr;
-    observed_ts: time;
-    source: string &default="TELLO_SDK_STATE";
     height_cm: double;
     tof_distance_cm: double;
-    barometer_raw: double;
-    battery_remaining_pct: double;
-    pitch_deg: double;
-    roll_deg: double;
-    yaw_deg: double;
-    velocity_x_raw: double;
-    velocity_y_raw: double;
-    velocity_z_raw: double;
-    motor_time_raw: double;
+    battery_status: vector of BatteryStatus;
 };
 
 function parse_state(data: string): table[string] of double
@@ -290,11 +280,8 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
                 known_pairs[source,destination]=network_time();
             else s$activity_limited=T;
             }
-        local t = Telemetry($drone_host=source,$observed_ts=network_time(),
-            $height_cm=state["h"],$tof_distance_cm=state["tof"],$barometer_raw=state["baro"],
-            $battery_remaining_pct=state["bat"],$pitch_deg=state["pitch"],$roll_deg=state["roll"],
-            $yaw_deg=state["yaw"],$velocity_x_raw=state["vgx"],$velocity_y_raw=state["vgy"],$velocity_z_raw=state["vgz"],
-            $motor_time_raw=state["time"]);
+        local t = Telemetry($height_cm=state["h"], $tof_distance_cm=state["tof"],
+            $battery_status=vector(BatteryStatus($remaining_pct=state["bat"])));
         s$telemetry=to_json(vector(t)); s$telemetry_ts=network_time();
         }
     else
