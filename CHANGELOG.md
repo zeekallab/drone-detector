@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.0 — 2026-11-03
+
+- Replace the main README with a concise overview; preserve full documentation in EXTENDED_README.md.
+
+- Rename the output field `telemetry` to `flight_telemetry` for MAVLink and Tello SDK.
+- Simplify MAVLink output to GPS, sea-level altitude, motion, battery_status and mode;
+  omit armed state, home-relative height, timestamps and message-source metadata.
+- Show system/component IDs only for multi-source snapshots. Prefer fresh individual
+  battery percentages, falling back to aggregate readings when unavailable.
+- Round displayed motion speeds to two decimals with a signed 0.01 minimum for tiny
+  nonzero readings. Keep original precision/timestamps for detection and freshness.
+- Emit telemetry_limited only when true. Update schema, examples and regression tests.
+
 ## 0.11.0 — 2026-11-03
 
 - Move all three MAVLink anomaly descriptions into the shared `alert` field.

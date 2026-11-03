@@ -223,7 +223,7 @@ function emit(c: connection, s: State, pair_summary: bool)
         $orig_messages=s$orig,$resp_messages=s$resp,$inspection_limited=s$limited,
         $drone_host=s$drone,$controller_host=s$controller,$activity_limited=s$activity_limited);
     if ( network_time() < control_tracking_limited_until ) rec$activity_limited=T;
-    if ( s?$telemetry && network_time() - s$telemetry_ts <= correlation_age ) rec$telemetry = s$telemetry;
+    if ( s?$telemetry && network_time() - s$telemetry_ts <= correlation_age ) rec$flight_telemetry = s$telemetry;
     local activities: vector of Activity = vector();
     for ( command in s$activity ) activities[|activities|]=s$activity[command];
     if ( |activities| > 0 ) rec$control_activity = to_json(activities);

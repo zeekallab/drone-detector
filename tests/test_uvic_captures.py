@@ -29,8 +29,8 @@ def main():
                 commands=set()
                 for row in rows:
                     byuid.setdefault(row['uid'],[]).append(row)
-                    if 'telemetry' in row:
-                        t=json.loads(row['telemetry'])[0]
+                    if 'flight_telemetry' in row:
+                        t=json.loads(row['flight_telemetry'])[0]
                         assert 0<=t['battery_remaining_pct']<=100 and 'latitude' not in t,t
                         assert row['drone_host']=='192.168.10.1',row
                     if 'control_activity' in row:

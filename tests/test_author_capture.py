@@ -39,16 +39,16 @@ def main():
                     assert row['protocol']=='mavlink' and row['likely_manufacturer']=='unknown',row
                     assert row['mavlink_versions']==[2] and row['autopilot_software']==['ArduPilot'],row
                     assert row['simulation_observed'] and not row['signing_observed'],row
-                    assert not any(row[k] for k in ['inspection_limited','metadata_limited','telemetry_limited']),row
-                    t=json.loads(row['telemetry'])
-                    assert len(t)==1 and t[0]['system_id']==1 and t[0]['component_id']==1,t
+                    assert not any(row.get(k,False) for k in ['inspection_limited','metadata_limited','telemetry_limited']),row
+                    t=json.loads(row['flight_telemetry'])
+                    assert len(t)==1 and 'system_id' not in t[0] and 'component_id' not in t[0],t
                     t=t[0]
-                    assert 37.2418<t['position']['latitude']<37.2419 and -115.797<t['position']['longitude']<-115.7969,t
-                    assert 136<t['position']['altitude_msl_m']<141,t
-                    assert -.2<t['height']['relative_altitude_m']<3.1,t
-                    assert t['batteries'] and all(b['remaining_pct']==100 for b in t['batteries']),t
-                    assert t['flight']['mode']==('GUIDED' if i==0 else 'RTL'),t
-                    assert t['flight']['armed'] and 0<=t['motion']['heading_deg']<360,t
+                    assert 37.2418<t['gps']['latitude']<37.2419 and -115.797<t['gps']['longitude']<-115.7969,t
+                    assert 136<t['altitude']<141,t
+                    assert 'height' not in t and 'flight' not in t,t
+                    assert t['battery_status'] and all(b['remaining_pct']==100 for b in t['battery_status']),t
+                    assert t['mode']==('GUIDED' if i==0 else 'RTL'),t
+                    assert 'armed' not in t and 0<=t['motion']['heading_deg']<360,t
                     if diagnostic:
                         assert row['checksum_failures']==row['malformed_frames']==0,row
                     else:

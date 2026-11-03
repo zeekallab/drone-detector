@@ -26,7 +26,7 @@ export {
 
     redef record DroneDetector::Info += {
         # JSON array, since Zeek log writers cannot log vectors of records.
-        telemetry: string &log &optional;
+        flight_telemetry: string &log &optional;
         control_activity: string &log &optional;
         activity_limited: bool &log &optional;
         telemetry_limited: bool &log &optional;
@@ -95,6 +95,68 @@ type Telemetry: record {
     batteries: vector of Battery &optional;
     flight: Flight &optional;
 };
+
+# Presentation records are separate from precise, timestamped detection state.
+type GPSView: record { latitude: double; longitude: double; };
+type MotionView: record {
+    groundspeed_m_s: double &optional;
+    heading_deg: count &optional;
+    climb_m_s: double &optional;
+};
+type BatteryView: record { battery_id: count &optional; remaining_pct: count; };
+type TelemetryView: record {
+    system_id: count &optional;
+    component_id: count &optional;
+    gps: GPSView &optional;
+    altitude: double &optional;
+    motion: MotionView &optional;
+    battery_status: vector of BatteryView &optional;
+    mode: string &optional;
+};
+
+function display_motion(value: double): double
+    {
+    if ( value == 0.0 ) return 0.0;
+    if ( value > 0.0 && value < 0.01 ) return 0.01;
+    if ( value < 0.0 && value > -0.01 ) return -0.01;
+    if ( value < 0.0 ) return -floor(-value * 100.0 + 0.5) / 100.0;
+    return floor(value * 100.0 + 0.5) / 100.0;
+    }
+
+function telemetry_view(t: Telemetry): TelemetryView
+    {
+    local v = TelemetryView($system_id=t$system_id, $component_id=t$component_id);
+    if ( t?$position )
+        {
+        v$gps = GPSView($latitude=t$position$latitude, $longitude=t$position$longitude);
+        v$altitude = t$position$altitude_msl_m;
+        }
+    if ( t?$motion )
+        {
+        local m = MotionView();
+        if ( t$motion?$groundspeed_m_s ) m$groundspeed_m_s = display_motion(t$motion$groundspeed_m_s);
+        if ( t$motion?$heading_deg ) m$heading_deg = t$motion$heading_deg;
+        if ( t$motion?$climb_m_s ) m$climb_m_s = display_motion(t$motion$climb_m_s);
+        v$motion = m;
+        }
+    if ( t?$batteries )
+        {
+        local individual = F;
+        for ( i in t$batteries ) if ( t$batteries[i]?$battery_id ) individual = T;
+        local batteries: vector of BatteryView = vector();
+        for ( i in t$batteries )
+            {
+            local b = t$batteries[i];
+            if ( individual && ! b?$battery_id ) next;
+            local out = BatteryView($remaining_pct=b$remaining_pct);
+            if ( b?$battery_id ) out$battery_id = b$battery_id;
+            batteries[|batteries|] = out;
+            }
+        if ( |batteries| > 0 ) v$battery_status = batteries;
+        }
+    if ( t?$flight ) v$mode = t$flight$mode;
+    return v;
+    }
 
 global emit: function(c: connection);
 
@@ -696,14 +758,20 @@ function emit(c: connection)
         $metadata_limited=s$metadata_limited, $telemetry_limited=s$telemetry_limited,
         $simulation_observed=s$simulation, $signing_observed=s$signed_count > 0);
 
-    local snapshots: vector of Telemetry = vector();
+    local snapshots: vector of TelemetryView = vector();
     for ( [sys, comp] in s$telemetry )
         {
         local t = fresh(s$telemetry[sys,comp]);
-        if ( t?$position || t?$height || t?$motion || t?$batteries || t?$flight )
-            snapshots[|snapshots|] = t;
+        if ( t?$position || t?$motion || t?$batteries || t?$flight )
+            snapshots[|snapshots|] = telemetry_view(t);
         }
-    if ( |snapshots| > 0 ) rec$telemetry = to_json(snapshots);
+    if ( |snapshots| == 1 )
+        {
+        delete snapshots[0]$system_id;
+        delete snapshots[0]$component_id;
+        }
+    if ( |snapshots| > 0 ) rec$flight_telemetry = to_json(snapshots);
+    if ( ! s$telemetry_limited ) delete rec$telemetry_limited;
     local controls: vector of Control = vector();
     for ( key in s$controls ) controls[|controls|] = s$controls[key];
     if ( |controls| > 0 ) rec$control_activity = to_json(controls);

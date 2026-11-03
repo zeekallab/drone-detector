@@ -69,7 +69,7 @@ def main():
     assert a['parameter_id']=='RTL_ALT' and a['parameter_value_bits']=='0x43898000' and a['target_system']==1,a;cases+=1
     # Indicators can be disabled without suppressing telemetry itself.
     rows,_=run(pcap([good+position(),position(4,lat=382418612)],times=[0,1]),'redef DroneDetector::log_interval = 0secs;\nredef DroneMAVLink::detect_telemetry_anomalies = F;\n',live=True)
-    assert all('alert' not in r for r in rows) and 'telemetry' in rows[-1],rows;cases+=1
+    assert all('alert' not in r for r in rows) and 'flight_telemetry' in rows[-1],rows;cases+=1
     # RC override, manual input and offboard setpoints retain their true targets.
     control_messages=[
         message(30,70,struct.pack('<8HBB',1500,*([65535]*7),1,1),124,sysid=255),

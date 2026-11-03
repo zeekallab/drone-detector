@@ -89,5 +89,5 @@ Tracking defaults to 4,096 directed IP pairs and four MACs per pair, with
 than the configured window is ignored. `arp_tracking_limited` warns that a local
 tracking bound was recently reached, so evidence may be incomplete. It is a
 worker-wide warning, not attribution of the overflowing traffic to this drone.
-See the [README](../README.md#arp-interception-pattern-optional) for commands and
+See the [README](../EXTENDED_README.md#arp-interception-pattern-optional) for commands and
 [validation](../validation/v0.6.0-results.md) for tested coverage.
