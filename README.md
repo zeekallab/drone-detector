@@ -1,5 +1,28 @@
 # Drone protocol detector — 0.4.0
 
+## What's new — v0.4.0 and v0.3.0
+
+- **Tello SDK support:** detect repeated structured status messages and correlate
+  commands with recently observed drone/controller pairs. Record battery, height,
+  orientation and raw motion values. Binary Tello control remains unsupported.
+- **Earlier, quieter logging:** keep one `drone.log`, emit on protocol confirmation,
+  then update at most once per minute per connection by default. No session-end duplicate.
+- **MAVLink flight telemetry:** report coordinates, altitude, battery, groundspeed,
+  heading, climb rate, armed status and flight mode, with source identities and
+  observation timestamps. Missing or stale measurements are omitted.
+- **Control and interference signals:** summarize MAVLink control requests and ACKs,
+  including RC/manual/offboard inputs, and flag position/altitude discontinuities
+  or multiple controller system IDs targeting one system. These are investigation
+  signals, **not proof of takeover**; signature authentication is not implemented.
+- **Cleaner output and more validation:** verbose diagnostics are optional;
+  94 synthetic scenarios pass, alongside real-capture regressions. Capture sources
+  are credited below and in the fixture documentation.
+
+See the [changelog](CHANGELOG.md) for release details and
+[v0.4.0 validation](validation/v0.4.0-results.md) for evidence and coverage limits.
+
+## Overview
+
 Zeek scripts that write manufacturer-neutral **`drone.log`** records for:
 
 - **Legacy DJI Phantom Vision control/telemetry**, over configured TCP ports.
