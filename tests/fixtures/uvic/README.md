@@ -38,3 +38,11 @@ repository does not redistribute them. Run `tests/test_injection_captures.py`
 with `ISOT_CAPTURE_ROOT` pointing to the extracted `Raw Data` directory. Six
 files meet the repetitive-maneuver threshold; the first two are identified as
 SDK activity but remain unflagged. See [findings](../../../docs/injection-review.md).
+
+## Selected video review (v0.8.0)
+
+`video-manifest.json` records the two selected Video captures. Run
+`tests/test_video_captures.py` with `ISOT_CAPTURE_ROOT` pointing to the extracted
+`Raw Data` directory. Both produce correlated H.264 video observations; the
+other five Video files were not tested. Captures and footage are not redistributed.
+See [video findings](../../../docs/video-review.md).

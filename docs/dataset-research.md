@@ -110,3 +110,9 @@ repetitive opposing maneuver requests and response counts; six captures meet
 the behavioral threshold. The two varied-command captures remain unflagged
 because command syntax does not establish authorization. See
 [injection findings](injection-review.md).
+
+## v0.8.0 video follow-up
+
+Two selected Video-folder captures support Tello SDK Annex-B H.264 observation
+when correlated with recent SDK state. Video presence is logged separately from
+attack alerts, without asserting FPV piloting. See [video findings](video-review.md).

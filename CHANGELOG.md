@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-11-03
+
+- Add default-enabled Tello SDK Annex-B H.264 video observations, correlated with
+  recent SDK telemetry and bounded structural video evidence.
+- Add `video_active` and `video_codec` to video-flow rows in the existing drone.log;
+  retain the shared minute gate and keep video presence separate from attack alerts.
+- Test two selected Video captures and synthetic positive/negative cases; document
+  codec/transport visibility, worker-local correlation and the limits of FPV inference.
+
 ## 0.7.0 — 2026-11-03
 
 - Add default-enabled repetitive opposing Tello SDK maneuver detection and axis

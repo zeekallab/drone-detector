@@ -3,6 +3,7 @@
 module DroneTello;
 
 export {
+    global recent_pair: function(drone: addr, controller: addr): bool;
     const command_ports: set[port] = { 8889/udp } &redef;
     const state_ports: set[port] = { 8890/udp } &redef;
     const minimum_state_messages: count = 3 &redef;
@@ -27,6 +28,12 @@ export {
 
 # Worker-local pair learning. Never infer identity from a port or a generic "ok".
 global known_pairs: table[addr,addr] of time &write_expire=correlation_age;
+function recent_pair(drone: addr, controller: addr): bool
+    {
+    return [drone,controller] in known_pairs &&
+        network_time()-known_pairs[drone,controller] <= correlation_age;
+    }
+
 type Activity: record {
     command: string;
     source_host: addr;

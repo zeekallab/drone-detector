@@ -1,0 +1,12 @@
+[
+  {
+    "member": "Raw Data/Video/video_6_5_14_5mins.pcap",
+    "bytes": 117639852,
+    "sha256": "0723585c2ec781b6e3e690fa68bce07c7f56d51315d27f3a9b4ff3837985f6da"
+  },
+  {
+    "member": "Raw Data/Video/video_7_5_14_10mins.pcap",
+    "bytes": 117383610,
+    "sha256": "34eff7c4d435c057dcedba68524ad471c89a86661167b926e93810076fb8b0d5"
+  }
+]

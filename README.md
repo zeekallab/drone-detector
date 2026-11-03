@@ -1,6 +1,18 @@
-# Drone protocol detector — 0.7.0
+# Drone protocol detector — 0.8.0
 
-## What's new — v0.7.0
+## What's new — v0.8.0
+
+- **Video presence:** default-enabled Tello SDK H.264 detection writes
+  `video_active=true` and `video_codec="H264"` in the existing `drone.log`.
+- **Corroborated evidence:** require recent SDK telemetry for the same drone and
+  receiver, plus H.264 parameter sets, an IDR slice and distinct slice prefixes.
+  UDP/11111 or a `streamon` command alone does not identify video.
+- **Quiet reporting:** one video-flow observation on confirmation, then at most
+  once per minute per connection. Video is an observation, not an attack alert.
+- **Coverage:** two selected Video captures pass. This identifies a transmitted
+  stream, not proof of FPV piloting, viewing, or universal drone-video coverage.
+
+## Earlier updates — v0.7.0
 
 - **Repetitive maneuver alert:** flag sustained opposing Tello SDK movement or
   rotation requests on a command flow correlated with recent drone telemetry.
@@ -53,7 +65,7 @@
   are credited below and in the fixture documentation.
 
 See the [changelog](CHANGELOG.md) for release details and
-[v0.7.0 validation](validation/v0.7.0-results.md) for evidence and coverage limits.
+[v0.8.0 validation](validation/v0.8.0-results.md) for evidence and coverage limits.
 
 ## Overview
 
@@ -61,6 +73,7 @@ Zeek scripts that write manufacturer-neutral **`drone.log`** records for:
 
 - **Legacy DJI Phantom Vision control/telemetry**, over configured TCP ports.
 - **Tello SDK status and correlated commands**, over configured UDP ports.
+- **Tello SDK H.264 video**, correlated with recent SDK telemetry.
 - **Binary Tello control traffic**, with validated framing and replay/integrity alerts.
 - **MAVLink 1 and 2**, over configured UDP ports, with message-specific CRC validation
   and heartbeat-based role information.
@@ -70,6 +83,62 @@ MAVLink; Tello SDK uses **DJI/Ryze**. `autopilot_software` may identify ArduPilo
 not a hardware manufacturer. MAVLink also serves rovers, boats, cameras and
 simulators. A protocol match does not prove that a physical aircraft is present,
 airborne, or carrying out an attack.
+
+## Video observations
+
+A confirmed video flow produces a separate connection record **in the same
+`drone.log`**, with these fields:
+
+```json
+"protocol": "tello-video",
+"video_active": true,
+"video_codec": "H264",
+"drone_host": "192.168.10.1",
+"controller_host": "192.168.10.4"
+```
+
+Addresses are illustrative. Its `uid` and `id` identify the video connection;
+SDK control/telemetry rows retain their own connection IDs. The receiver is
+reported using the existing `controller_host` field; this does not authenticate
+that host or prove it is actively steering. Join by host pair and time when
+reviewing related control and video records.
+
+The default module `scripts/video.zeek` is **custom code in this repository**.
+It initially covers raw Annex-B H.264 over UDP to port 11111, as observed in the
+Tello SDK captures. Three valid SDK state messages must first establish the
+source/receiver pair, with that evidence refreshed within 120 seconds by default.
+Video payloads must then contain basic H.264 SPS/PPS header evidence, an IDR
+slice, and three distinct slice-bearing packet prefixes within 10 seconds.
+Parameter-set checks include the forbidden bit, supported profile, reserved bits
+and level range. This is bounded structural recognition, not full bitstream
+validation or cryptographic authentication. The port and `streamon` alone never
+trigger it; unrelated H.264 cameras without the SDK context remain unclassified.
+
+The script inspects at most the first 128 bytes per candidate datagram, with a
+4 MiB inspection budget per connection per minute. `inspection_limited` indicates
+that a budget was reached. It does not reassemble or decode video, save footage,
+extract images, or log resolution. Both selected captures were independently
+identified offline as H.264 Main profile, 960×720.
+
+`video_active=true` means qualifying video was observed **at that record's time**.
+It is not a persistent session status, and no `false`/stop row is emitted when
+traffic ends. A missing video field means no supported video observation on that
+row, not proof that video is absent. Video observations do not set `alert` by
+themselves; optional enrichment such as ARP may still add its own finding.
+
+```zeek
+redef DroneVideo::ports += { 11111/udp };
+redef DroneVideo::evidence_age = 10secs;
+redef DroneVideo::prefix_bytes = 128;
+redef DroneVideo::max_inspected_bytes = 4194304;
+```
+
+Telemetry and video must reach the same worker. Encrypted/proprietary RF links,
+analog FPV, RTP/RTSP, other codecs, Tello's different binary video transport,
+fragmented parameter sets/start codes and unsupported ports are outside this
+initial coverage. A drone may stream while stationary, record without streaming,
+or send video that nobody watches. **This is evidence of transmitted video, not
+proof of FPV piloting.** [Capture review](docs/video-review.md).
 
 ## Alert reference
 
