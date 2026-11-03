@@ -85,3 +85,11 @@ A future Tello detector should validate repeated SDK state/command-response
 structure, distinguish application modes, and avoid labeling port/MAC/video alone
 as drone or attack evidence. Tello state in these examples has relative/local
 measurements; it must not be treated as global GPS coordinates.
+
+## v0.4.0 follow-up
+
+The SDK state/command evidence above is now implemented in `scripts/tello.zeek`.
+The instruction-injection fixture produces nine rate-limited Tello SDK entries.
+The replay, manipulation and spoofing samples still produce no detections because
+their binary Tello protocol has not been implemented. This supersedes only the
+SDK portion of the v0.3.0 coverage-gap description; it is not an attack classifier.

@@ -1,13 +1,14 @@
-# Drone protocol detector — 0.3.0
+# Drone protocol detector — 0.4.0
 
 Zeek scripts that write manufacturer-neutral **`drone.log`** records for:
 
 - **Legacy DJI Phantom Vision control/telemetry**, over configured TCP ports.
+- **Tello SDK status and correlated commands**, over configured UDP ports.
 - **MAVLink 1 and 2**, over configured UDP ports, with message-specific CRC validation
   and heartbeat-based role information.
 
 `likely_manufacturer` is **DJI** for the legacy detector and **unknown** for
-MAVLink. `autopilot_software` may identify ArduPilot or PX4; that is software,
+MAVLink; Tello SDK uses **DJI/Ryze**. `autopilot_software` may identify ArduPilot or PX4; that is software,
 not a hardware manufacturer. MAVLink also serves rovers, boats, cameras and
 simulators. A protocol match does not prove that a physical aircraft is present,
 airborne, or carrying out an attack.
@@ -87,8 +88,7 @@ A **detection** record is written on the first delivered chunk/datagram that
 satisfies the existing protocol criteria. A confirmed connection then emits an
 **update** only when another valid message arrives at least `log_interval`
 (default **60 seconds**) after its previous record. There is no timer-driven
-empty update and **no session-end flush or duplicate**. This applies to both
-legacy DJI and MAVLink. `ts` is the emission/observation time, not connection
+empty update and **no session-end flush or duplicate**. This applies to legacy DJI, MAVLink and Tello SDK. `ts` is the emission/observation time, not connection
 start; `event_type` is `detection` or `update`. `uid` links records to `conn.log`.
 The conn fields `drone_protocol`, `drone_likely_manufacturer` and `drone_evidence`
 are still populated when the connection is removed.
@@ -290,6 +290,48 @@ usual specification; they are retained and counted instead of silently losing
 valid mission/configuration evidence. Signed trailers are recognized, not
 cryptographically verified. Neither CRCs nor heartbeat claims authenticate devices.
 
+### Tello SDK
+
+Added in v0.4.0. Candidate ports are UDP/8890 for state and UDP/8889 for commands.
+Confirmation requires three consecutive state datagrams with the expected 16
+numeric SDK fields, delimiter structure and sanity checks. Repeated identical
+valid state messages count because a stationary drone can emit identical state.
+Ports, MAC addresses, video or generic `ok` responses never establish identity.
+
+After state confirmation, recognized SDK commands on the same observed drone/
+controller IP pair can identify the command connection. Pair knowledge expires
+(default 120 seconds) and is bounded (default 1,024 pairs). It is **worker-local**:
+if a cluster distributes the state and command flows to different workers,
+state detection still works but command correlation may be unavailable. Command
+traffic before state confirmation, or without recent state, is not classified.
+
+Tello writes `protocol=tello-sdk`, `likely_manufacturer=DJI/Ryze`, `drone_host`,
+and `controller_host` in the same rate-limited `drone.log`. Its `telemetry` JSON
+array includes battery percentage, height/tof in cm, pitch/roll/yaw in degrees,
+and raw barometer, axis velocity and motor-time values. The SDK state format
+provides **no global GPS coordinates**, and yaw is not labeled as a true compass
+heading. Raw fields deliberately avoid assuming units/reference frames absent
+or ambiguous in the documentation. Tello telemetry uses host identity rather
+than MAVLink system/component IDs.
+
+`control_activity` groups recognized command text with source/destination IP,
+first/last observation time and counts. Supported commands include SDK entry,
+takeoff/land, emergency/stop, video on/off, selected queries, directional movement,
+rotation, flips, speed and RC commands. Argument ranges are checked. This is not
+a complete SDK command decoder: go/curve/jump, Wi-Fi credentials and mission-pad
+commands are not logged. Generic responses do not trigger classification and
+are not currently summarized. A normal command may be used maliciously, but
+its presence is **not** a takeover verdict. MAVLink-specific anomaly indicators
+are not applied to these different Tello measurements.
+
+The binary Tello protocol observed in the replay/manipulation/spoofing samples
+is still unsupported. The `cc` prefix alone is insufficient: it needs a separate
+validated framing/checksum decoder. Neither SDK text nor learned host pairs are
+authenticated; spoofed status can imitate this protocol.
+
+Reference: [Ryze Tello SDK 2.0 User Guide](https://dl-cdn.ryzerobotics.com/downloads/Tello/Tello%20SDK%202.0%20User%20Guide.pdf).
+Validation: [v0.4.0 results](validation/v0.4.0-results.md).
+
 ## Configuration
 
 Place redefinitions after the package load:
@@ -299,6 +341,10 @@ redef DroneDetector::ports += { 12345/tcp }; # additional legacy-DJI candidate
 redef DroneMAVLink::ports += { 14551/udp };  # additional MAVLink candidate
 
 # Defaults:
+redef DroneTello::minimum_state_messages = 3;
+redef DroneTello::max_inspected_bytes = 1048576;
+redef DroneTello::max_known_pairs = 1024;
+redef DroneTello::correlation_age = 120secs;
 redef DroneDetector::log_interval = 60secs;
 redef DroneDetector::include_diagnostics = F;
 redef DroneMAVLink::telemetry_max_age = 120secs;
@@ -332,7 +378,7 @@ is no all-traffic packet handler or arbitrary-port discovery.
 python3 tests/run_tests.py
 ```
 
-Runs 12 legacy-DJI synthetic scenarios and 28 MAVLink parser scenarios, plus 21 telemetry/live-logging and 13 control/anomaly regressions (74 synthetic scenarios total). If the credited
+Runs 12 legacy-DJI synthetic scenarios and 28 MAVLink parser scenarios, plus 21 telemetry/live-logging and 13 control/anomaly regressions (74 pre-Tello synthetic scenarios, plus the Tello suite). If the credited
 fixture is present, it also runs its real-capture regression; otherwise it prints
 an explicit skip. Download it first for the complete suite. An optional original
 DJI capture can be supplied with `DJI_CAPTURE=/path/to/djiuav.pcap.gz`. Override the
@@ -360,8 +406,8 @@ The first motor-speed packet in the simulator fixture starts FE, but contains
 
 [Dataset research notes](docs/dataset-research.md) cover the Kaggle flight-log
 CSV/JSON dataset and UVic ISOT Tello PCAPs, with attribution and limitations.
-Four optional UVic fixtures are coverage-gap/negative tests; **Tello detection
-is not implemented**. The Kaggle files are not PCAPs and are not used to claim
+The UVic SDK injection fixture is now a positive Tello test; three binary
+Tello fixtures remain negative/coverage-gap tests. The Kaggle files are not PCAPs and are not used to claim
 network detector accuracy or calibrate the heuristic thresholds.
 
 ## Limits and next steps

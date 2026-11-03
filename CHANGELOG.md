@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-11-02
+
+- Add Tello SDK detection from repeated structured status messages, with battery,
+  height, orientation and raw motion measurements in the existing drone.log.
+- Correlate bounded SDK command summaries with recently observed drone/controller
+  pairs. Keep the existing immediate confirmation and minute-level update policy.
+- Add synthetic parser/correlation/timing tests and a positive regression against
+  the UVic ISOT instruction-injection capture, with attribution. Binary Tello
+  control/replay traffic remains unsupported; no takeover verdict is inferred.
+
 ## 0.3.0 — 2026-11-02
 
 - Write immediately on protocol confirmation, followed by traffic-driven updates

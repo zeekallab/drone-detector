@@ -24,7 +24,8 @@ optional files the test reports a skip. The test uses `-C` to ensure application
 payloads are examined even if stored transport checksums are incomplete, and
 explicitly includes UDP/8889 and UDP/8890 as MAVLink candidate ports.
 
-Expected outcome: **no drone.log detections** with the current two parsers.
-These fixtures demonstrate a Tello coverage gap and protect against false
-classification, not detection of injection/replay/spoofing attacks. Never replay
-attack captures onto a live drone network; these tests read the files offline.
+Expected v0.4.0 outcome: **nine Tello SDK records** for the instruction-injection
+capture, containing status and correlated command activity; **no detections**
+for the three binary replay/manipulation/spoofing samples. This validates SDK
+identification, not a determination that observed commands were malicious.
+Never replay attack captures onto a live drone network; tests read files offline.
