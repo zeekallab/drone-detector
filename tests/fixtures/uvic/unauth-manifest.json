@@ -1,0 +1,42 @@
+[
+  {
+    "member": "Raw Data/Unauth/unauthen_1_5_16_8mins.pcap",
+    "bytes": 1212441,
+    "sha256": "08421e8dae8e8c35125051c9053f98e5695d71a14c8ae3a8cf3ee51f7e352d69"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_2_5_16_9mins.pcap",
+    "bytes": 1440531,
+    "sha256": "e35a3fbad9a460269146d5a5168ad08b72a1814ba7865b787cf8dfe0b92a8058"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_3_5_16_6mins.pcap",
+    "bytes": 989419,
+    "sha256": "2bb1a00208bdea5fcd6cd747bc0a060362f964f8daacbfccf5e58a3d5ab06cd9"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_4_5_16_6mins.pcap",
+    "bytes": 1165136,
+    "sha256": "5ef00b3a10485083b4663e45ac5cd08c3f4c29c33491a761bbf9efd09860780b"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_5_5_16_10mins.pcap",
+    "bytes": 1552345,
+    "sha256": "49ea2653ce103b86f9aa9c399a069f26fc6f593f2bdab33c55593f2b25c0b468"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_6_5_16_10mins.pcap",
+    "bytes": 1543069,
+    "sha256": "b60ddd1f426e5dd772ec61c60703a5d164d5711179aafaa712113d418b1660ba"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_7_5_16_9mins.pcap",
+    "bytes": 1456791,
+    "sha256": "3b741e34cb37d0f3abc29f661395172d818230a9444507aedb332ede7530b01c"
+  },
+  {
+    "member": "Raw Data/Unauth/unauthen_8_5_16_3mins.pcap",
+    "bytes": 395549,
+    "sha256": "22a859daa31154b777504a77e6c6773a0333ed36039cedffc08c8307e9bc4a0e"
+  }
+]

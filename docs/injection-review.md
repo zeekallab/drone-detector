@@ -89,3 +89,10 @@ from earlier versions while preserving the same rate limit. Not all late
 commands or responses are necessarily emitted. Tracking is bounded and reports
 `activity_limited` when command history is omitted. No live sensor deployment
 or performance claim is made.
+
+## v0.9.0 host-pair follow-up
+
+SDK maneuver history and command summaries now span UDP connections within an
+ordered drone/controller host pair. Earlier per-connection coverage statements
+above describe the earlier release. Source-port churn and earlier-port response
+context are now supported; see [Unauth review](unauth-review.md).

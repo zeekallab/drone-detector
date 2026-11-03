@@ -116,3 +116,10 @@ because command syntax does not establish authorization. See
 Two selected Video-folder captures support Tello SDK Annex-B H.264 observation
 when correlated with recent SDK state. Video presence is logged separately from
 attack alerts, without asserting FPV piloting. See [video findings](video-review.md).
+
+## v0.9.0 host-pair follow-up
+
+SDK maneuver history and command summaries now span UDP connections within an
+ordered drone/controller host pair. Earlier per-connection coverage statements
+above describe the earlier release. Source-port churn and earlier-port response
+context are now supported; see [Unauth review](unauth-review.md).

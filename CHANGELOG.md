@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0 — 2026-11-03
+
+- Add default control source-port churn alerts for recent, validated SDK peer pairs.
+- Aggregate SDK command/maneuver history and reply context across UDP connections;
+  rate-limit command summaries per ordered host pair while retaining trigger UID
+  and bounded contributing UIDs. Omit misleading per-connection direction totals.
+- Accept recognized replies on an earlier port only after a recent validated
+  command; retain no unique request/outcome or authorization claim.
+- Add bounded port/pair state, expiry and limit reporting; validate all eight
+  Unauth captures plus injection, station-mode and normal-flight comparisons.
+
 ## 0.8.0 — 2026-11-03
 
 - Add default-enabled Tello SDK Annex-B H.264 video observations, correlated with

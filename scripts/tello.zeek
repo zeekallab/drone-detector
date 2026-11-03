@@ -10,6 +10,12 @@ export {
     const max_inspected_bytes: count = 1048576 &redef;
     const max_known_pairs: count = 1024 &redef;
     const correlation_age = 120 secs &redef;
+    const max_control_pairs: count = 1024 &redef;
+    const churn_window = 60secs &redef;
+    const churn_min_ports: count = 10 &redef;
+    const churn_min_span = 10secs &redef;
+    const max_source_ports: count = 128 &redef;
+    const max_related_uids: count = 32 &redef;
     const maneuver_window = 60secs &redef;
     const maneuver_min_commands: count = 10 &redef;
     const maneuver_min_reversals: count = 8 &redef;
@@ -19,6 +25,10 @@ export {
     redef record DroneDetector::Info += {
         drone_host: addr &log &optional;
         controller_host: addr &log &optional;
+        sdk_summary_scope: string &log &optional;
+        sdk_command_count: count &log &optional;
+        sdk_source_port_count: count &log &optional;
+        sdk_related_uids: set[string] &log &optional;
         sdk_repetitive_axes: set[string] &log &optional;
         sdk_ok_responses: count &log &optional;
         sdk_error_responses: count &log &optional;
@@ -61,11 +71,43 @@ type State: record {
     maneuvers: table[string] of vector of Maneuver;
     repetitive_axes: set[string];
     has_commands: bool &default=F;
+    command_ts: time &optional;
+    command_count: count &default=0;
+    source_ports: table[port] of time &optional;
+    related_uids: set[string] &optional;
+    churn: bool &default=F;
+    peak_ports: count &default=0;
     ok_responses: count &default=0;
     error_responses: count &default=0;
     unknown_responses: count &default=0;
 };
 redef record connection += { tello_state: State &optional; };
+
+# Command summaries and patterns are keyed by ordered host pair, not UDP socket.
+global control_pairs: table[addr,addr] of State &write_expire=correlation_age;
+global control_tracking_limited_until: time = double_to_time(0.0);
+
+function track_uid(s: State, uid: string)
+    {
+    if ( ! s?$related_uids ) s$related_uids=set();
+    if ( uid in s$related_uids || |s$related_uids| < max_related_uids ) add s$related_uids[uid];
+    else s$activity_limited=T;
+    }
+
+function observe_port(s: State, p: port)
+    {
+    if ( ! s?$source_ports ) s$source_ports=table();
+    local expired: set[port]=set();
+    for ( k in s$source_ports )
+        if ( network_time()-s$source_ports[k] > churn_window ) add expired[k];
+    for ( k in expired ) delete s$source_ports[k];
+    if ( p in s$source_ports || |s$source_ports| < max_source_ports ) s$source_ports[p]=network_time();
+    else s$activity_limited=T;
+    if ( |s$source_ports| > s$peak_ports ) s$peak_ports=|s$source_ports|;
+    local oldest=network_time();
+    for ( k in s$source_ports ) if ( s$source_ports[k] < oldest ) oldest=s$source_ports[k];
+    if ( |s$source_ports| >= churn_min_ports && network_time()-oldest >= churn_min_span ) s$churn=T;
+    }
 
 type Telemetry: record {
     drone_host: addr;
@@ -171,7 +213,7 @@ function observe_maneuver(s: State, data: string)
          reversals >= maneuver_min_reversals ) add s$repetitive_axes[axis];
     }
 
-function emit(c: connection, s: State)
+function emit(c: connection, s: State, pair_summary: bool)
     {
     if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
     if ( ! s$confirmed || (s?$last_log && network_time() - s$last_log < DroneDetector::log_interval) ) return;
@@ -180,6 +222,7 @@ function emit(c: connection, s: State)
         $evidence=s?$telemetry ? "repeated-sdk-state" : "sdk-command+recent-state-pair",
         $orig_messages=s$orig,$resp_messages=s$resp,$inspection_limited=s$limited,
         $drone_host=s$drone,$controller_host=s$controller,$activity_limited=s$activity_limited);
+    if ( network_time() < control_tracking_limited_until ) rec$activity_limited=T;
     if ( s?$telemetry && network_time() - s$telemetry_ts <= correlation_age ) rec$telemetry = s$telemetry;
     local activities: vector of Activity = vector();
     for ( command in s$activity ) activities[|activities|]=s$activity[command];
@@ -195,11 +238,26 @@ function emit(c: connection, s: State)
         rec$sdk_error_responses=s$error_responses;
         rec$sdk_unknown_command_responses=s$unknown_responses;
         }
+    if ( pair_summary )
+        {
+        # uid/id identify the packet that triggered emission, not every aggregated command.
+        rec$sdk_summary_scope="host-pair";
+        rec$sdk_command_count=s$command_count;
+        rec$sdk_source_port_count=s$peak_ports;
+        if ( s?$related_uids ) rec$sdk_related_uids=s$related_uids;
+        delete rec$orig_messages; delete rec$resp_messages;
+        if ( s$churn )
+            {
+            if ( ! rec?$alert ) rec$alert=set();
+            add rec$alert["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"];
+            }
+        }
     DroneDetector::write_log(rec);
     c$drone_log_ts=network_time();
     s$activity = table();
     s$repetitive_axes=set();
     s$ok_responses=0; s$error_responses=0; s$unknown_responses=0;
+    s$command_count=0; s$related_uids=set(); s$churn=F; s$peak_ports=0;
     s$last_log = network_time();
     }
 
@@ -242,32 +300,54 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
     else
         {
         if ( dp in state_ports ) s$valid=0;
-        # Response text supplies context only on an already confirmed command flow.
-        if ( s$confirmed && s$has_commands && s?$drone && source == s$drone && destination == s$controller &&
-             sp in command_ports && [source,destination] in known_pairs &&
-             network_time()-known_pairs[source,destination] <= correlation_age && |data| <= 256 &&
+        # Replies may return to an earlier port. Correlate at host-pair level,
+        # but require a recent validated command, not just telemetry or generic text.
+        if ( sp in command_ports && dp !in state_ports && recent_pair(source,destination) &&
+             [source,destination] in control_pairs && |data| <= 256 &&
              (data == "ok" || /^error( |$)/ in data || /^unknown command:/ in data) )
             {
-            if ( data == "ok" ) ++s$ok_responses;
-            else if ( /^unknown command:/ in data ) ++s$unknown_responses;
-            else ++s$error_responses;
-            if ( is_orig ) ++s$orig; else ++s$resp;
-            emit(c,s); return;
+            local replies=control_pairs[source,destination];
+            if ( ! replies?$command_ts || network_time()-replies$command_ts > correlation_age ) return;
+            if ( data == "ok" ) ++replies$ok_responses;
+            else if ( /^unknown command:/ in data ) ++replies$unknown_responses;
+            else ++replies$error_responses;
+            track_uid(replies,c$uid);
+            s$confirmed=T; s$drone=source; s$controller=destination;
+            control_pairs[source,destination]=replies;
+            emit(c,replies,T); return;
             }
-        if ( ! sdk_command(data) || dp !in command_ports || [destination,source] !in known_pairs ||
-             network_time() - known_pairs[destination,source] > correlation_age ) return;
-        s$has_commands=T;
-        observe_maneuver(s,data);
-        s$confirmed=T; s$drone=destination; s$controller=source;
-        if ( data in s$activity )
-            { ++s$activity[data]$observations; s$activity[data]$last_seen=network_time(); }
-        else if ( |s$activity| < 64 )
-            s$activity[data]=Activity($command=data,$source_host=source,$destination_host=destination,
+        if ( ! sdk_command(data) || dp !in command_ports || ! recent_pair(destination,source) ) return;
+        s$has_commands=T; s$confirmed=T; s$drone=destination; s$controller=source;
+        if ( [destination,source] !in control_pairs )
+            {
+            if ( |control_pairs| >= max_control_pairs )
+                { s$activity_limited=T; control_tracking_limited_until=network_time()+correlation_age; return; }
+            control_pairs[destination,source]=State($budget_start=network_time(),$activity=table(),
+                $maneuvers=table(),$repetitive_axes=set(),$confirmed=T,$drone=destination,$controller=source);
+            }
+        local shared=control_pairs[destination,source];
+        # A stale command context must not survive indefinitely on reply traffic.
+        if ( shared?$command_ts && network_time()-shared$command_ts > correlation_age )
+            {
+            local previous=shared;
+            shared=State($budget_start=network_time(),$activity=table(),$maneuvers=table(),
+                $repetitive_axes=set(),$confirmed=T,$drone=destination,$controller=source);
+            if ( previous?$last_log ) shared$last_log=previous$last_log;
+            }
+        shared$command_ts=network_time(); ++shared$command_count;
+        if ( s$limited ) shared$limited=T;
+        observe_maneuver(shared,data); observe_port(shared,sp); track_uid(shared,c$uid);
+        if ( data in shared$activity )
+            { ++shared$activity[data]$observations; shared$activity[data]$last_seen=network_time(); }
+        else if ( |shared$activity| < 64 )
+            shared$activity[data]=Activity($command=data,$source_host=source,$destination_host=destination,
                 $first_seen=network_time(),$last_seen=network_time(),$observations=1);
-        else s$activity_limited=T;
+        else shared$activity_limited=T;
+        control_pairs[destination,source]=shared;
+        emit(c,shared,T); return;
         }
     if ( is_orig ) ++s$orig; else ++s$resp;
-    emit(c,s);
+    emit(c,s,F);
     }
 
 event zeek_init() &priority=5

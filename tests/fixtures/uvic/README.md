@@ -46,3 +46,10 @@ SDK activity but remain unflagged. See [findings](../../../docs/injection-review
 `Raw Data` directory. Both produce correlated H.264 video observations; the
 other five Video files were not tested. Captures and footage are not redistributed.
 See [video findings](../../../docs/video-review.md).
+
+## Unauth review (v0.9.0)
+
+`unauth-manifest.json` records the eight reviewed members. Run
+`tests/test_unauth_captures.py` with `ISOT_CAPTURE_ROOT` pointing to `Raw Data`.
+The suite also checks eight injection, six station-mode and three normal-flight
+captures. See [findings](../../../docs/unauth-review.md). No PCAPs are redistributed.

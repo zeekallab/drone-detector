@@ -1,6 +1,19 @@
-# Drone protocol detector — 0.8.0
+# Drone protocol detector — 0.9.0
 
-## What's new — v0.8.0
+## What's new — v0.9.0
+
+- **Control source-port churn alert:** detect validated SDK commands using many
+  source ports for the same drone/controller pair; enabled by default.
+- **Patterns survive port changes:** SDK maneuver history now spans connections
+  within an ordered host pair, closing the gap in all eight Unauth captures.
+- **Quieter command logging:** at most one SDK command summary per minute per
+  host pair. Summaries carry command counts and bounded contributing UID evidence.
+- **Earlier-port replies:** count recognized replies at host-pair level after a
+  recent validated command; do not claim unique request/reply matching.
+- **Measured coverage:** all eight Unauth captures alert, with total output reduced
+  from 57–223 rows to 9–33. [Review and limitations](docs/unauth-review.md).
+
+## Earlier updates — v0.8.0
 
 - **Video presence:** default-enabled Tello SDK H.264 detection writes
   `video_active=true` and `video_codec="H264"` in the existing `drone.log`.
@@ -65,7 +78,7 @@
   are credited below and in the fixture documentation.
 
 See the [changelog](CHANGELOG.md) for release details and
-[v0.8.0 validation](validation/v0.8.0-results.md) for evidence and coverage limits.
+[v0.9.0 validation](validation/v0.9.0-results.md) for evidence and coverage limits.
 
 ## Overview
 
@@ -98,7 +111,8 @@ A confirmed video flow produces a separate connection record **in the same
 ```
 
 Addresses are illustrative. Its `uid` and `id` identify the video connection;
-SDK control/telemetry rows retain their own connection IDs. The receiver is
+SDK telemetry rows retain their connection IDs; command summaries identify the
+triggering connection and list contributing UIDs. The receiver is
 reported using the existing `controller_host` field; this does not authenticate
 that host or prove it is actively steering. Join by host pair and time when
 reviewing related control and video records.
@@ -219,6 +233,70 @@ The rate limit is once per minute per BSSID. Tracking is bounded; a sticky
 zeek -r /path/to/radiotap-capture.pcap /path/to/drone-detector/scripts/wifi.zeek LogAscii::use_json=T
 ```
 
+### Control source-port churn
+
+**Description:** Repeated validated Tello SDK commands arrive from many UDP source
+ports belonging to the same controller/drone host pair. This can indicate scripted
+control using changing sockets, including the pattern in the Unauth captures.
+Legitimate per-command sockets, NAT or reconnection behavior can look the same;
+this is **not proof of unauthorized access** or multiple physical controllers.
+
+```json
+"alert": ["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"],
+"sdk_summary_scope": "host-pair",
+"sdk_command_count": 20,
+"sdk_source_port_count": 21,
+"sdk_related_uids": ["Cexample1", "Cexample2"]
+```
+
+The default threshold is **10 distinct command source ports within 60 seconds**,
+with their retained last-observation times spanning at least 10 seconds. Only
+supported, grammar-valid commands correlated with recent SDK telemetry for the
+same ordered host pair count. Replies, generic UDP traffic and unconfirmed peers
+do not establish churn. Source IP or destination IP changes form separate pairs.
+
+SDK command summaries now aggregate across connections and emit at most once
+per minute per host pair. The triggering connection's `uid` and `id.*` are retained
+for navigation; **they do not identify every contributing command**. `drone_host`
+and `controller_host` define the aggregation key. `sdk_related_uids` lists up to
+32 contributing command/response connection UIDs since the preceding summary.
+The summary omits `orig_messages`/`resp_messages` because connection-relative
+direction totals would be misleading across these flows.
+
+`sdk_command_count` and `control_activity` describe commands since the last
+summary. `sdk_source_port_count` is the **peak rolling distinct-port count observed
+while processing commands since the last summary**, not an interval-only count;
+its 60-second history can overlap an earlier summary. Maneuver and churn findings
+are retained until the next eligible summary and then cleared, while bounded
+rolling histories remain. There is no session-end flush.
+
+Recognized replies from the drone can return to an earlier port and still count
+in the same pair summary, provided there was a validated command within 120
+seconds and SDK peer evidence is fresh. Generic replies alone cannot establish
+identity. Numeric battery replies and unsupported text are not counted in the
+three existing response categories. Counts are observations, not uniquely matched
+outcomes or proof of command execution.
+
+```zeek
+redef DroneTello::churn_min_ports = 10;
+redef DroneTello::churn_window = 60secs;
+redef DroneTello::churn_min_span = 10secs;
+redef DroneTello::max_control_pairs = 1024;
+redef DroneTello::max_source_ports = 128;
+redef DroneTello::max_related_uids = 32;
+```
+
+State is bounded to 1,024 command pairs, 128 source ports per pair, 32 UIDs per
+summary, 64 distinct activity strings, and 128 maneuver samples per axis. Idle
+pair state expires after 120 seconds by default. `activity_limited` warns of
+omissions. Pair-table saturation also raises that flag on SDK records for the
+next correlation interval as a worker-wide warning, not attribution to that pair.
+
+Telemetry, binary Tello and video rows keep their own connection-based limits;
+this change is **not a single global row per drone per minute**. Evidence split
+across workers, NAT that merges controllers, spoofed addresses, and loss of
+telemetry remain limitations. [Unauth capture findings](docs/unauth-review.md).
+
 ### Repetitive maneuver commands
 
 **Description:** Sustained opposing movement or rotation requests can indicate
@@ -233,7 +311,7 @@ requests; it does not establish unauthorized access or actual aircraft motion.
 
 The default package evaluates grammar-valid SDK commands only after three valid
 SDK state messages establish a recent drone/controller pair. Within a rolling
-60-second window on one connection and axis, it requires at least 10 sampled
+60-second window on one ordered drone/controller host pair and axis, it requires at least 10 sampled
 commands, eight direction changes, four commands in each direction, and a span
 of at least 10 seconds. Commands less than 250 milliseconds apart on the same
 axis are excluded from pattern sampling. Axes are `forward-back`, `left-right`,
@@ -245,7 +323,7 @@ the existing minute limit and no-session-end-flush behavior. `control_activity`
 already summarizes exact observed requests. `sdk_repetitive_axes` identifies
 which pattern met the threshold since the previous emitted record.
 
-On confirmed SDK flows, `sdk_ok_responses`, `sdk_error_responses`, and
+On SDK host-pair summaries, `sdk_ok_responses`, `sdk_error_responses`, and
 `sdk_unknown_command_responses` count recognized replies since the last emitted
 record. The fields are omitted when no reply was counted. Reply-only traffic
 cannot establish identity. These are observed response counts, not uniquely
@@ -263,9 +341,9 @@ redef DroneTello::maneuver_max_samples = 128;
 ```
 
 Keep thresholds positive and sample capacity large enough for them. History is
-bounded to 128 samples per axis per connection by default; `activity_limited`
-warns of omitted command information. Comparisons do not span connections or
-workers. Encrypted traffic, command-only captures without recent SDK state,
+bounded to 128 samples per axis per host pair by default; `activity_limited`
+warns of omitted command information. Comparisons span UDP connections within
+the pair, but do not span workers. Encrypted traffic, command-only captures without recent SDK state,
 single dangerous commands, `rc` streaming, and other unsupported command forms
 are outside this rule. Recent telemetry identifies a peer pair, not a trusted or
 authenticated controller. [Review and validation](docs/injection-review.md).
@@ -435,14 +513,17 @@ start; `event_type` is `detection` or `update`. `uid` links records to `conn.log
 The conn fields `drone_protocol`, `drone_likely_manufacturer` and `drone_evidence`
 are still populated when the connection is removed.
 
-The limit is **per connection**, not globally per drone: forwarded copies or a
+SDK command/response summaries additionally use a **per-host-pair** limit;
+telemetry and other protocol records remain separate. Otherwise the limit is
+**per connection**, not globally per drone: forwarded copies or a
 new connection can produce additional entries. A single connection may relay
 several vehicles; their measurements remain separated by system/component ID.
 An initial record can lack position/battery if those messages have not arrived.
 Exporter buffering or downstream ingestion can add latency after log generation.
 Minute snapshots can miss short movements or mode transitions between updates.
-Counters are cumulative observations **as of that snapshot**, not final session
-totals or unique actions. They include forwarded/duplicate packets.
+Directional message counters are cumulative observations **as of that snapshot**,
+not final session totals or unique actions. SDK command/response summary counts
+are interval observations instead. They include forwarded/duplicate packets.
 
 ### Default fields
 
@@ -450,7 +531,8 @@ totals or unique actions. They include forwarded/duplicate packets.
 |---|---|
 | `ts`, `event_type`, `uid`, `id.*` | Observation time, detection/update and connection identity |
 | `likely_manufacturer`, `protocol`, `evidence` | Detection and manufacturer evidence; MAVLink remains manufacturer unknown |
-| `orig_messages`, `resp_messages` | Cumulative validated observations by direction |
+| `orig_messages`, `resp_messages` | Cumulative validated observations by direction; omitted from SDK host-pair summaries |
+| `sdk_summary_scope`, `sdk_command_count`, `sdk_source_port_count`, `sdk_related_uids` | SDK host-pair summary scope, interval command count, peak rolling source-port count and bounded contributing UIDs |
 | `mavlink_versions`, `vehicle_types`, `autopilot_software` | Observed versions/roles/software; non-autopilot heartbeats do not add `not-an-autopilot` |
 | `simulation_observed` | A valid SIMSTATE or SIM_STATE message was observed; absence does not prove a physical aircraft |
 | `signing_observed`, `signature_validation` | Signature trailer presence; authentication is **not performed** |
@@ -491,7 +573,7 @@ Legacy DJI still provides protocol evidence only, not these MAVLink measurements
 ### Control activity and possible interference
 
 `control_activity` is a JSON-encoded array of requests/responses observed **since
-this connection's previous log entry**. Identical selected requests are grouped
+the previous log entry for this connection (MAVLink) or host pair (SDK)**. Identical selected requests are grouped
 with observation counts and first/last timestamps. Source IP, source system/component,
 and target system/component are retained. It includes:
 
