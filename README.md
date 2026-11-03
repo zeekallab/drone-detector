@@ -1,6 +1,18 @@
-# Drone protocol detector — 0.5.0
+# Drone protocol detector — 0.6.0
 
-## What's new — v0.5.0
+## What's new — v0.6.0
+
+- **Optional MITM signal:** correlate repeated reciprocal ARP claims with a
+  confirmed drone flow and append an **ARP interception pattern** to `alert`.
+- **Evidence fields:** show the claiming MACs and affected IPs in the existing
+  minute-limited `drone.log`; no trusted-controller list is required.
+- **Capture validation:** reviewed all 12 UVic MITM captures; 11 meet the rule,
+  with one one-sided case explicitly outside coverage. Three normal flights
+  produce no alerts. See [MITM findings](docs/mitm-review.md).
+- **Explicit opt-in:** load `scripts/arp.zeek` only when one local IPv4 broadcast
+  domain's ARP and drone traffic reach the same worker. See requirements below.
+
+## Earlier updates — v0.5.0
 
 - **New `alert` field:** human-readable replay-like and malformed-control findings
   in the existing minute-limited `drone.log`.
@@ -30,7 +42,7 @@
   are credited below and in the fixture documentation.
 
 See the [changelog](CHANGELOG.md) for release details and
-[v0.5.0 validation](validation/v0.5.0-results.md) for evidence and coverage limits.
+[v0.6.0 validation](validation/v0.6.0-results.md) for evidence and coverage limits.
 
 ## Overview
 
@@ -126,6 +138,57 @@ The rate limit is once per minute per BSSID. Tracking is bounded; a sticky
 # Explicit opt-in, from a separate output directory:
 zeek -r /path/to/radiotap-capture.pcap /path/to/drone-detector/scripts/wifi.zeek LogAscii::use_json=T
 ```
+
+### ARP interception pattern (optional)
+
+**Description:** One MAC repeatedly claims both endpoints of an already-confirmed
+IPv4 drone flow. This is consistent with ARP poisoning used for interception;
+legitimate proxy ARP can produce the same pattern. It does not prove unauthorized
+access, modified commands, or a successful takeover.
+
+Load `scripts/arp.zeek` explicitly. For endpoints A and B, the same unicast MAC
+must advertise A to B and B to A through ARP replies. Each direction requires
+three sampled replies within the last 60 seconds, spanning at least two seconds.
+The module retains at most one sample per second per claim and requires the
+Ethernet source to match the advertised sender MAC. It does not infer drone
+identity from ports, addresses, MAC vendors or ARP alone.
+
+```json
+"alert": ["ARP interception pattern: one MAC repeatedly claims both endpoints of a confirmed drone flow"],
+"arp_claimant_macs": ["c8:78:7d:96:67:d7"],
+"arp_claimed_ips": ["192.168.0.102", "192.168.0.104"]
+```
+
+The example addresses come from the research captures; they are not hardcoded.
+This appends evidence to existing records, preserving other alerts and the
+one-record-per-minute-per-connection limit. ARP alone does not cause a new row.
+
+```sh
+# Explicit opt-in, from a separate output directory:
+zeek -r /path/to/single-lan-capture.pcap /path/to/drone-detector/scripts/arp.zeek LogAscii::use_json=T
+```
+
+```zeek
+# After loading arp.zeek; use the real MAC of a known legitimate proxy:
+redef DroneARP::ignored_macs += { "02:00:00:00:00:01" };
+redef DroneARP::minimum_claims = 3;
+redef DroneARP::evidence_window = 60secs;
+redef DroneARP::minimum_span = 2secs;
+```
+
+**Visibility:** requires both ARP and drone traffic from **one IPv4 broadcast
+domain on the same worker**. State is not VLAN/interface-scoped; do not enable
+across merged networks with overlapping addresses. A routed mirror may omit ARP,
+and cluster distribution may split the required evidence. This module is disabled
+by default; live Corelight deployment/performance is unvalidated.
+
+Tracking defaults to 4,096 directed IP pairs, four MACs per pair and 128 time
+samples per claim. `arp_tracking_limited` is a worker-wide warning of recently
+omitted evidence, not proof that this flow exhausted the bound. Keep thresholds
+positive and within the sample capacity; a window longer than two minutes exceeds
+the idle-pair lifetime. A known proxy can be excluded with `ignored_macs`.
+One-sided poisoning, IPv6 neighbor discovery and payload-only manipulation are
+not covered. [Capture findings and limitations](docs/mitm-review.md).
 
 ### Thresholds and limits
 

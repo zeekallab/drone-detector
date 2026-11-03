@@ -32,6 +32,8 @@ export {
         inspection_limited: bool &log;
     };
     global write_log: function(rec: Info);
+    global enrich_log: hook(rec: Info);
+
     redef record Conn::Info += {
         drone_protocol: string &log &optional;
         drone_likely_manufacturer: string &log &optional;
@@ -51,6 +53,7 @@ function write_log(rec: Info)
         delete rec$skipped_bytes;
         delete rec$gaps;
         }
+    hook enrich_log(rec);
     Log::write(LOG, rec);
     }
 

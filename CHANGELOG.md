@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 — 2026-11-03
+
+- Add optional ARP interception-pattern detection, correlated with confirmed drone
+  flows, without a configured trusted-controller baseline.
+- Append claimant MACs, claimed IPs and bounded-tracking status to drone.log;
+  preserve existing alert descriptions and the shared logging rate limit.
+- Require explicit loading and a single IPv4 broadcast domain on the same worker;
+  document proxy-ARP false positives, one-sided gaps and capture visibility.
+- Add 18 synthetic checks and all 12 MITM capture regressions, plus three normal
+  comparisons. Credit UVic ISOT and publish the measured coverage limitations.
+
 ## 0.5.0 — 2026-11-03
 
 - Add the optional `alert` array with replay-like and malformed-control descriptions.
