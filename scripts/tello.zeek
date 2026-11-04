@@ -284,7 +284,10 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
             {
             s$confirmed=T;
             if ( [source,destination] in known_pairs || |known_pairs| < max_known_pairs )
+                {
                 known_pairs[source,destination]=network_time();
+                publish_pair(source,destination,network_time());
+                }
             else s$activity_limited=T;
             }
         local t = Telemetry($height_cm=state["h"], $tof_distance_cm=state["tof"],
