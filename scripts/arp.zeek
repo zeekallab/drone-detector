@@ -89,8 +89,21 @@ hook DroneDetector::enrich_log(rec: DroneDetector::Info)
     for ( m in claims[a,b] )
         if ( m in claims[b,a] && sufficient(claims[a,b][m]) && sufficient(claims[b,a][m]) ) add matches[m];
     if ( |matches| == 0 ) return;
-    if ( ! rec?$alert ) rec$alert=set();
-    add rec$alert["ARP interception pattern: one MAC repeatedly claims both endpoints of a confirmed drone flow"];
+    if ( ! rec?$manipulation_detection ) rec$manipulation_detection=set();
+    add rec$manipulation_detection["ARP interception pattern: one MAC repeatedly claims both endpoints of a confirmed drone flow"];
     rec$arp_claimant_macs=matches;
     rec$arp_claimed_ips=set(a,b);
+    }
+
+# Consult optional ARP evidence before the ordinary telemetry logging gate.
+hook DroneDetector::collect_detections(id: conn_id, findings: set[string])
+    {
+    local a=id$orig_h; local b=id$resp_h;
+    if ( [a,b] !in claims || [b,a] !in claims ) return;
+    for ( m in claims[a,b] )
+        if ( m in claims[b,a] && sufficient(claims[a,b][m]) && sufficient(claims[b,a][m]) )
+            {
+            add findings["ARP interception pattern: one MAC repeatedly claims both endpoints of a confirmed drone flow"];
+            break;
+            }
     }

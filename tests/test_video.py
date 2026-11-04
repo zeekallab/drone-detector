@@ -13,7 +13,7 @@ def replay(payloads,times=None,state=True,reverse=False,port=11111,settings='',e
     items += list(extra)
     rows,conns=run(combined(sorted(items,key=lambda x:x[0])),settings,live=True)
     video=[r for r in rows if r.get('video_active')]
-    assert all(r['video_codec']=='H264' and r['protocol']=='tello-video' and 'alert' not in r for r in video),rows
+    assert all(r['video_codec']=='H264' and r['protocol']=='tello-video' and 'manipulation_detection' not in r for r in video),rows
     assert all(b['ts']-a['ts']>=60 for a,b in zip(video,video[1:])),video
     return video,conns
 

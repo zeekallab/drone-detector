@@ -9,8 +9,10 @@ export {
     const minimum_consecutive_messages: count = 3 &redef;
     const max_inspected_bytes: count = 1048576 &redef;
     const max_pending_requests: count = 256 &redef;
-    # Emit on validated traffic, never on a timer or at connection removal.
+    # Routine updates are minute-limited; new findings and final summaries are exceptions.
     const log_interval = 60 secs &redef;
+    const immediate_detections = T &redef;
+    const final_updates = T &redef;
     const include_diagnostics = F &redef;
 
     type Info: record {
@@ -21,7 +23,7 @@ export {
         likely_manufacturer: string &log;
         protocol: string &log;
         evidence: string &log;
-        alert: set[string] &log &optional;
+        manipulation_detection: set[string] &log &optional;
         orig_messages: count &log &optional;
         resp_messages: count &log &optional;
         matched_responses: count &log &optional;
@@ -31,6 +33,17 @@ export {
         gaps: count &log &optional;
         inspection_limited: bool &log;
     };
+    type LogState: record {
+        last_regular: time &optional;
+        last_log: time &optional;
+        reported: set[string] &default=set();
+        pending: set[string] &default=set();
+        dirty: bool &default=F;
+    };
+    global collect_detections: hook(id: conn_id, findings: set[string]);
+    global log_kind: function(ls: LogState, findings: set[string], final: bool): string;
+    global connection_log_kind: function(c: connection, ls: LogState, findings: set[string], final: bool): string;
+    global write_state: function(rec: Info, ls: LogState, kind: string);
     global write_log: function(rec: Info);
     global enrich_log: hook(rec: Info);
 
@@ -57,7 +70,41 @@ function write_log(rec: Info)
     Log::write(LOG, rec);
     }
 
-global emit: function(c: connection);
+function log_kind(ls: LogState, findings: set[string], final: bool): string
+    {
+    for ( finding in findings )
+        if ( ! final || ls$dirty || finding !in ls$reported ) add ls$pending[finding];
+    if ( final )
+        return final_updates && ls?$last_log && (ls$dirty || |ls$pending| > 0) ? "final" : "";
+    if ( ! ls?$last_log ) return "detection";
+    if ( immediate_detections )
+        for ( finding in ls$pending )
+            if ( finding !in ls$reported ) return "manipulation";
+    if ( ! ls?$last_regular || network_time()-ls$last_regular >= log_interval ) return "update";
+    return "";
+    }
+
+function connection_log_kind(c: connection, ls: LogState, findings: set[string], final: bool): string
+    {
+    # Preserve the legacy shared connection gate when both exceptions are disabled.
+    if ( ! immediate_detections && ! final_updates && c?$drone_log_ts &&
+         network_time()-c$drone_log_ts < log_interval ) return "";
+    hook collect_detections(c$id,findings);
+    return log_kind(ls,findings,final);
+    }
+
+function write_state(rec: Info, ls: LogState, kind: string)
+    {
+    rec$event_type=kind;
+    if ( |ls$pending| > 0 ) rec$manipulation_detection=copy(ls$pending);
+    write_log(rec);
+    if ( rec?$manipulation_detection )
+        for ( finding in rec$manipulation_detection ) add ls$reported[finding];
+    if ( kind == "detection" || kind == "update" ) ls$last_regular=network_time();
+    ls$last_log=network_time(); ls$dirty=F; ls$pending=set();
+    }
+
+global emit: function(c: connection, final: bool);
 
 type Direction: record {
     buffer: string &default="";
@@ -67,6 +114,7 @@ type Direction: record {
 type State: record {
     orig: Direction;
     resp: Direction;
+    logging: LogState &default=LogState();
     confirmed: bool &default=F;
     last_log: time &optional;
     budget_start: time;
@@ -163,7 +211,8 @@ event tcp_contents(c: connection, is_orig: bool, seq: count, contents: string)
         s$orig$buffer = "";
         s$resp$buffer = "";
         }
-    if ( s$orig$messages + s$resp$messages > before && s$confirmed ) emit(c);
+    if ( s$orig$messages + s$resp$messages > before && s$confirmed )
+        { s$logging$dirty=T; emit(c,F); }
     }
 
 event content_gap(c: connection, is_orig: bool, seq: count, length: count)
@@ -174,7 +223,7 @@ event content_gap(c: connection, is_orig: bool, seq: count, length: count)
     d$buffer = "";
     d$consecutive = 0;
     s$pending = set();
-    ++s$gaps;
+    ++s$gaps; s$logging$dirty=T;
     }
 
 event connection_flipped(c: connection)
@@ -186,26 +235,28 @@ event connection_flipped(c: connection)
     c$drone_state$pending = set();
     }
 
-function emit(c: connection)
+function emit(c: connection, final: bool)
     {
-    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < log_interval ) return;
     local s = c$drone_state;
-    if ( s?$last_log && network_time() - s$last_log < log_interval ) return;
+    local kind=connection_log_kind(c,s$logging,set(),final);
+    if ( kind == "" ) return;
     local evidence = s$matched > 0 ? "framing+xor+request_response" : "framing+xor";
-    write_log([$ts=network_time(), $event_type=s?$last_log ? "update" : "detection",
+    write_state([$ts=network_time(), $event_type=s?$last_log ? "update" : "detection",
         $uid=c$uid, $id=c$id, $likely_manufacturer="DJI",
         $protocol="dji-phantom-vision-legacy", $evidence=evidence,
         $orig_messages=s$orig$messages, $resp_messages=s$resp$messages,
         $matched_responses=s$matched, $commands=s$commands,
         $checksum_failures=s$checksum_failures, $skipped_bytes=s$skipped,
-        $gaps=s$gaps, $inspection_limited=s$limited]);
+        $gaps=s$gaps, $inspection_limited=s$limited],s$logging,kind);
     c$drone_log_ts=network_time();
     s$last_log = network_time();
     }
 
 event connection_state_remove(c: connection) &priority=0
     {
-    if ( ! c?$drone_state || ! c$drone_state$confirmed || ! c?$conn ) return;
+    if ( ! c?$drone_state || ! c$drone_state$confirmed ) return;
+    emit(c,T);
+    if ( ! c?$conn ) return;
     c$conn$drone_protocol = "dji-phantom-vision-legacy";
     c$conn$drone_likely_manufacturer = "DJI";
     c$conn$drone_evidence = c$drone_state$matched > 0 ? "framing+xor+request_response" : "framing+xor";

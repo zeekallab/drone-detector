@@ -1,5 +1,40 @@
 # Drone detector — extended documentation (v0.13.0)
 
+## Logging and finding delivery — v0.14.0
+
+`alert` is now **`manipulation_detection`**. Update searches/dashboards to use the
+new name. `event_type`, `evidence`, and `protocol` retain their names.
+
+- `detection`: first confirmed protocol observation.
+- `update`: routine activity, at most once per 60 seconds by default.
+- `manipulation`: prompt record for a newly observed finding description, once
+  per description per protocol/connection. Repeats wait for an update or final.
+- `final`: close/timeout summary only when activity or findings remain unreported.
+
+A flight change alone does not create an immediate record. SDK commands share
+one host-pair summary while contributing connections remain active; its final
+record is emitted when the last contributing connection closes. Optional Wi-Fi
+uses BSSID scope and flushes on inactivity or shutdown. The scopes are local to
+each worker; cluster video identity sharing does not aggregate attack state.
+A rare connection confirmed by multiple protocol parsers has separate protocol
+records. Final timestamps represent flush time, not flight time; `video_active`
+in a final record means video was observed during the summarized activity.
+
+Optional ARP evidence is checked on the next eligible drone packet and on close;
+ARP packets alone do not initiate a drone row. Capture visibility, thresholds,
+and timing still determine whether a finding qualifies. Accelerating replay
+can change which thresholds are met. These indicators do not prove takeover.
+
+`DroneDetector::log_interval` controls routine updates.
+`DroneDetector::immediate_detections=F` disables prompt finding records;
+`DroneDetector::final_updates=F` disables final summaries. Both default to `T`.
+Disabling both restores the legacy shared minute gate and can hide short-lived
+findings. The default is recommended. Legacy threshold regression tests explicitly
+use that compatibility policy; `tests/test_logging_policy.py` tests defaults.
+
+Earlier version notes and validation counts below describe their original
+release; the policy above supersedes earlier minute-only logging descriptions.
+
 [Back to the project overview](README.md)
 
 ## What's new — v0.13.0
@@ -78,9 +113,9 @@ and rate-limit behavior is retained. MAVLink output is unchanged.
 ## Earlier updates — v0.11.0
 
 - **One place for detections:** all three MAVLink anomaly indicators now appear
-  as readable descriptions in `alert`, alongside the existing detections.
+  as readable descriptions in `manipulation_detection`, alongside the existing detections.
 - **Simpler output:** removes the separate `anomaly_indicators` field. Update
-  searches that used it to search `alert`; thresholds and minute limits are unchanged.
+  searches that used it to search `manipulation_detection`; thresholds and minute limits are unchanged.
 - **Optional alerts:** see the enablement instructions below for ARP interception
   and wireless deauthentication. Both remain opt-in.
 
@@ -99,7 +134,7 @@ using the actual installed package path. Each module also loads the main detecto
 
 Enable only the module(s) whose capture requirements your deployment meets, then
 reload/redeploy the policy through your normal Zeek or Corelight bundle workflow.
-Remove the corresponding line to disable it. Both write detections into `alert`
+Remove the corresponding line to disable it. Both write detections into `manipulation_detection`
 in `drone.log`.
 
 **ARP:** routed feeds may omit ARP; do not combine overlapping networks. Legitimate
@@ -168,7 +203,7 @@ control pattern, not proof of a forged sender or takeover.
 ## Earlier updates — v0.6.0
 
 - **Optional MITM signal:** correlate repeated reciprocal ARP claims with a
-  confirmed drone flow and append an **ARP interception pattern** to `alert`.
+  confirmed drone flow and append an **ARP interception pattern** to `manipulation_detection`.
 - **Evidence fields:** show the claiming MACs and affected IPs in the existing
   minute-limited `drone.log`; no trusted-controller list is required.
 - **Capture validation:** reviewed all 12 UVic MITM captures; 11 meet the rule,
@@ -179,7 +214,7 @@ control pattern, not proof of a forged sender or takeover.
 
 ## Earlier updates — v0.5.0
 
-- **New `alert` field:** human-readable replay-like and malformed-control findings
+- **New `manipulation_detection` field:** human-readable replay-like and malformed-control findings
   in the existing minute-limited `drone.log`.
 - **Binary Tello identification:** validate declared length, header CRC8 and frame
   CRC16 before evaluating joystick replay/integrity patterns.
@@ -194,7 +229,7 @@ control pattern, not proof of a forged sender or takeover.
   commands with recently observed drone/controller pairs. Record battery, height,
   orientation and raw motion values. v0.5.0 adds separate binary Tello identification.
 - **Earlier, quieter logging:** keep one `drone.log`, emit on protocol confirmation,
-  then update at most once per minute per connection by default. No session-end duplicate.
+  then update at most once per minute per connection by default. Final summaries are emitted only for unreported activity.
 - **MAVLink flight telemetry:** report coordinates, altitude, battery, groundspeed,
   heading, climb rate, armed status and flight mode, with source identities and
   observation timestamps. Missing or stale measurements are omitted.
@@ -266,7 +301,7 @@ identified offline as H.264 Main profile, 960×720.
 `video_active=true` means qualifying video was observed **at that record's time**.
 It is not a persistent session status, and no `false`/stop row is emitted when
 traffic ends. A missing video field means no supported video observation on that
-row, not proof that video is absent. Video observations do not set `alert` by
+row, not proof that video is absent. Video observations do not set `manipulation_detection` by
 themselves; optional enrichment such as ARP may still add its own finding.
 
 ```zeek
@@ -285,7 +320,7 @@ proof of FPV piloting.** [Capture review](docs/video-review.md).
 
 ## Alert reference
 
-The optional **`alert`** field in `drone.log` is an array of human-readable
+The optional **`manipulation_detection`** field in `drone.log` is an array of human-readable
 findings. It is omitted when no alert threshold is met; a record can contain
 multiple alert descriptions. These are **behavioral investigation signals**,
 not proof that a drone accepted a command or that a takeover/password crack succeeded.
@@ -314,7 +349,7 @@ can indicate rapid replay of control traffic. This complements the older-replay
 rule above, whose minimum age is two seconds.
 
 ```json
-"alert": ["Rapid replay-like control traffic: bursts of repeated checksum-valid Tello joystick messages"],
+"manipulation_detection": ["Rapid replay-like control traffic: bursts of repeated checksum-valid Tello joystick messages"],
 "binary_rapid_replayed_frames": 25,
 "binary_rapid_replayed_distinct": 25
 ```
@@ -335,7 +370,7 @@ record, then clears the pending alert. The rolling evidence may span log interva
 repeat observations/distinct payloads **since the preceding record**, so an alert
 can appear alongside counters lower than the rolling-window threshold. Distinct
 counts combine the two direction-local sets; they are not global unique packets.
-No session-end flush or extra alert emission bypasses the minute gate.
+New finding types bypass the routine minute gate; unreported activity is flushed on close.
 
 ```zeek
 redef DroneTelloBinary::rapid_min_age = 10msec;
@@ -375,7 +410,7 @@ faulty senders can also cause this condition; compare capture quality and other 
 Example when both conditions are met:
 
 ```json
-"alert": [
+"manipulation_detection": [
   "Replay-like control traffic: repeated older, checksum-valid Tello joystick messages",
   "Malformed control traffic: repeated Tello joystick length or checksum failures"
 ]
@@ -429,7 +464,7 @@ Legitimate per-command sockets, NAT or reconnection behavior can look the same;
 this is **not proof of unauthorized access** or multiple physical controllers.
 
 ```json
-"alert": ["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"],
+"manipulation_detection": ["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"],
 "sdk_summary_scope": "host-pair",
 "sdk_command_count": 20,
 "sdk_source_port_count": 21,
@@ -455,7 +490,9 @@ summary. `sdk_source_port_count` is the **peak rolling distinct-port count obser
 while processing commands since the last summary**, not an interval-only count;
 its 60-second history can overlap an earlier summary. Maneuver and churn findings
 are retained until the next eligible summary and then cleared, while bounded
-rolling histories remain. There is no session-end flush.
+rolling histories remain. Unreported commands/findings are flushed when the last
+contributing connection closes. Cached pair history can survive a quiet gap until
+its correlation timeout, so reconnects can retain the routine gate and reported types.
 
 Recognized replies from the drone can return to an earlier port and still count
 in the same pair summary, provided there was a validated command within 120
@@ -492,7 +529,7 @@ pilot maneuvers can produce exactly the same pattern. The alert describes the
 requests; it does not establish unauthorized access or actual aircraft motion.
 
 ```json
-"alert": ["Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests"],
+"manipulation_detection": ["Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests"],
 "sdk_repetitive_axes": ["forward-back", "yaw"]
 ```
 
@@ -506,7 +543,7 @@ axis are excluded from pattern sampling. Axes are `forward-back`, `left-right`,
 
 Findings are retained until the next eligible record, then cleared. The rolling
 command history remains available for ongoing-pattern detection. This preserves
-the existing minute limit and no-session-end-flush behavior. `control_activity`
+the routine minute limit, with prompt new findings and a pending-activity final flush. `control_activity`
 already summarizes exact observed requests. `sdk_repetitive_axes` identifies
 which pattern met the threshold since the previous emitted record.
 
@@ -550,14 +587,14 @@ Ethernet source to match the advertised sender MAC. It does not infer drone
 identity from ports, addresses, MAC vendors or ARP alone.
 
 ```json
-"alert": ["ARP interception pattern: one MAC repeatedly claims both endpoints of a confirmed drone flow"],
+"manipulation_detection": ["ARP interception pattern: one MAC repeatedly claims both endpoints of a confirmed drone flow"],
 "arp_claimant_macs": ["c8:78:7d:96:67:d7"],
 "arp_claimed_ips": ["192.168.0.102", "192.168.0.104"]
 ```
 
 The example addresses come from the research captures; they are not hardcoded.
-This appends evidence to existing records, preserving other alerts and the
-one-record-per-minute-per-connection limit. ARP alone does not cause a new row.
+This appends evidence to drone records. A new ARP finding may prompt a row on
+the next validated drone packet; ARP alone does not cause a new row.
 
 ```sh
 # Explicit opt-in, from a separate output directory:
@@ -610,11 +647,8 @@ multi-payload delayed-repeat rule. Stateful comparisons are per connection/worke
 not cross-connection controller authentication. Altered payloads with recomputed
 checksums may pass validation. Packet loss/capture damage can affect evidence.
 
-IP protocols share the per-connection logging gate. The configured log interval
-(default 60 seconds) is not bypassed for alerts, and there is no final-session
-flush. Brief activity after the last record can therefore remain unreported if
-traffic ends before the next eligible record. A shorter interval trades volume
-for faster reporting and changes the amount of evidence accumulated per record.
+See the logging policy above: new findings and final summaries are exceptions
+to the routine minute limit.
 
 [Validation results](validation/v0.5.0-results.md) describe positive captures,
 normal comparisons and coverage limits. [Wireless capture findings](docs/password-cracking-review.md)
@@ -694,9 +728,10 @@ PCAPs have valid transport checksums and are tested without `-C`.
 A **detection** record is written on the first delivered chunk/datagram that
 satisfies the existing protocol criteria. A confirmed connection then emits an
 **update** only when another valid message arrives at least `log_interval`
-(default **60 seconds**) after its previous record. There is no timer-driven
-empty update and **no session-end flush or duplicate**. This applies to legacy DJI, MAVLink and Tello SDK. `ts` is the emission/observation time, not connection
-start; `event_type` is `detection` or `update`. `uid` links records to `conn.log`.
+(default **60 seconds**) after its previous routine record. New finding types can produce a prompt
+**manipulation** record. A **final** record flushes unreported activity on close
+or timeout. There is no timer-driven empty update or unconditional end duplicate. `ts` is the emission/observation time, not connection
+start; `event_type` is `detection`, `update`, `manipulation`, or `final`. `uid` links records to `conn.log`.
 The conn fields `drone_protocol`, `drone_likely_manufacturer` and `drone_evidence`
 are still populated when the connection is removed.
 
@@ -716,7 +751,7 @@ are interval observations instead. They include forwarded/duplicate packets.
 
 | Fields | Meaning |
 |---|---|
-| `ts`, `event_type`, `uid`, `id.*` | Observation time, detection/update and connection identity |
+| `ts`, `event_type`, `uid`, `id.*` | Observation/flush time, record type and connection identity |
 | `likely_manufacturer`, `protocol`, `evidence` | Detection and manufacturer evidence; MAVLink remains manufacturer unknown |
 | `orig_messages`, `resp_messages` | Cumulative validated observations by direction; omitted from SDK host-pair summaries |
 | `sdk_summary_scope`, `sdk_command_count`, `sdk_source_port_count`, `sdk_related_uids` | SDK host-pair summary scope, interval command count, peak rolling source-port count and bounded contributing UIDs |
@@ -807,7 +842,7 @@ bucket. This is a bounded activity summary, not a full command audit trail.
 
 ### MAVLink anomaly alerts
 
-These heuristic signals appear in the shared `alert` array, using these exact
+These heuristic signals appear in the shared `manipulation_detection` array, using these exact
 strings. They are not a takeover verdict. The separate `anomaly_indicators`
 output field was removed in v0.11.0; no replacement log field is added.
 
@@ -831,13 +866,10 @@ can trigger them. Smooth spoofing, spoofing an existing controller ID, replay
 without a discontinuity and encrypted/unobserved links can evade them. Detection
 requires a protocol-confirmed connection; an isolated one-way command flow without
 a valid heartbeat may not qualify. No cryptographic signature/replay validation,
-containment or real-time alert bypass is added by the MAVLink module.
+or containment is added by the MAVLink module. Finding delivery uses the shared logging policy.
 
-The minute limit also bounds how quickly suspicious activity appears. If a
-connection ends before another eligible update, pending activity is **not flushed**.
-This deliberately follows the no-session-end-record policy; use a shorter interval
-if timely activity reporting is more important than volume. State and comparisons
-are local to each connection/worker, not globally correlated across relay paths.
+New finding types can be reported promptly; pending activity is flushed when
+the connection closes. State and comparisons remain local to each connection/worker.
 
 Optional network policy: when **both** `protected_drone_nets` and
 `trusted_controller_nets` are configured, requests sent toward a protected IP
@@ -860,11 +892,11 @@ redef DroneMAVLink::max_activity_values = 64;
 To examine signals in Splunk:
 
 ```spl
-index=zee-corelight _path=drone alert=*
-| table _time uid protocol alert
+index=zee-corelight _path=drone manipulation_detection=*
+| table _time uid protocol manipulation_detection
 ```
 
-For MAVLink findings only, filter `alert="mavlink anomaly indicator - *"`.
+For MAVLink findings only, filter `manipulation_detection="mavlink anomaly indicator - *"`.
 Control request details remain in `control_activity`; correlate with the
 controller/operator and flight context before concluding interference.
 

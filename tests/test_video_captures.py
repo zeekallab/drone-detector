@@ -9,13 +9,13 @@ def main():
     if not all((BASE/'Video'/n).exists() for n in names):print('SKIP: selected ISOT video captures absent.');return
     for name in names:
         with tempfile.TemporaryDirectory(prefix='drone-video-') as tmp:
-            r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(BASE/'Video'/name),str(ROOT/'scripts'),'LogAscii::use_json=T'],cwd=tmp,capture_output=True,text=True)
+            r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(BASE/'Video'/name),str(ROOT/'scripts'),'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],cwd=tmp,capture_output=True,text=True)
             assert r.returncode==0,r.stderr
             assert not (Path(tmp)/'reporter.log').exists(),name
             f=Path(tmp)/'drone.log';rows=[json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
             videos=[r for r in rows if r.get('video_active')]
             assert videos,name
-            assert all(r['video_codec']=='H264' and r['drone_host']=='192.168.10.1' and r['controller_host']=='192.168.10.4' and 'alert' not in r for r in videos),videos
+            assert all(r['video_codec']=='H264' and r['drone_host']=='192.168.10.1' and r['controller_host']=='192.168.10.4' and 'manipulation_detection' not in r for r in videos),videos
             groups={}
             for r in rows:groups.setdefault(r['uid'],[]).append(r)
             for g in groups.values():assert all(b['ts']-a['ts']>=60 for a,b in zip(g,g[1:])),name

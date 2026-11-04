@@ -27,11 +27,15 @@ type Network: record {
     total: count &default=0;
     eapol: count &default=0;
     pending: bool &default=F;
+    logging: DroneDetector::LogState &default=DroneDetector::LogState();
     last_log: time &optional;
     seen: set[string];
     limited: bool &default=F;
 };
-global networks: table[string] of Network &write_expire=5min;
+global emit: function(bssid: string, n: Network, final: bool);
+function expire_network(t: table[string] of Network, bssid: string): interval
+    { emit(bssid,t[bssid],T); return 0secs; }
+global networks: table[string] of Network &write_expire=5min &expire_func=expire_network;
 
 function byte(data: string, offset: count): count
     { return bytestring_to_count(data[offset:offset+1]); }
@@ -40,15 +44,19 @@ function le16(data: string, offset: count): count
 function mac(data: string): string
     { return fmt("%02x:%02x:%02x:%02x:%02x:%02x",byte(data,0),byte(data,1),byte(data,2),byte(data,3),byte(data,4),byte(data,5)); }
 
-function emit(bssid: string, n: Network)
+function emit(bssid: string, n: Network, final: bool)
     {
-    if ( ! n$pending || (n?$last_log && network_time()-n$last_log < DroneDetector::log_interval) ) return;
-    DroneDetector::write_log([$ts=network_time(),$event_type=n?$last_log ? "update" : "detection",
+    if ( ! n$pending && ! final ) return;
+    if ( n$total+n$eapol > 0 ) n$logging$dirty=T;
+    local findings: set[string]=set();
+    if ( n$pending ) add findings["Wireless deauthentication burst: repeated disconnect frames on a Tello-named Wi-Fi network"];
+    local kind=DroneDetector::log_kind(n$logging,findings,final);
+    if ( kind == "" ) return;
+    DroneDetector::write_state([$ts=network_time(),$event_type=n?$last_log ? "update" : "detection",
         $protocol="802.11",$likely_manufacturer="unknown",$evidence="observed-tello-named-ssid+deauthentication-burst",
         $inspection_limited=F,$wireless_bssid=bssid,$wireless_ssid=n$ssid,
         $wireless_deauth_frames=n$total,$wireless_eapol_key_frames=n$eapol,
-        $wireless_peak_burst=n$peak,$wireless_tracking_limited=n$limited,
-        $alert=set("Wireless deauthentication burst: repeated disconnect frames on a Tello-named Wi-Fi network")]);
+        $wireless_peak_burst=n$peak,$wireless_tracking_limited=n$limited],n$logging,kind);
     n$last_log=network_time(); n$pending=F; n$total=0; n$eapol=0; n$peak=0;
     n$burst=0; n$bucket_start=network_time();
     }
@@ -123,7 +131,8 @@ event raw_packet(p: raw_pkt_hdr)
         add n$seen[key]; ++n$burst; ++n$total;
         if ( n$burst > n$peak ) n$peak=n$burst;
         if ( n$burst >= minimum_deauth_frames ) n$pending=T;
-        emit(bs,n);
+        emit(bs,n,F);
+        networks[bs]=n;
         }
     else if ( kind == 2 && flags%4 != 3 && (flags/64)%2 == 0 )
         {
@@ -141,6 +150,10 @@ event raw_packet(p: raw_pkt_hdr)
         local length=bytestring_to_count(data[e+2:e+4]);
         if ( length < 95 || |data| < e+4+length ) return;
         ++n$eapol;
-        emit(bs,n);
+        emit(bs,n,F);
+        networks[bs]=n;
         }
     }
+
+event zeek_done()
+    { for ( bssid in networks ) emit(bssid,networks[bssid],T); }

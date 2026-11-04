@@ -23,13 +23,13 @@ def replay(payloads,times=None,settings='',**kw):
     return run(pcap(payloads,sport=7777,dport=8889,times=times,**kw),settings,live=True)
 
 
-def has(rows,word):return any(word in a for r in rows for a in r.get('alert',[]))
+def has(rows,word):return any(word in a for r in rows for a in r.get('manipulation_detection',[]))
 
 
 def main():
     cases=0
     rows,conns=replay([frame(i) for i in range(3)])
-    assert len(rows)==1 and rows[0]['protocol']=='tello-binary' and 'alert' not in rows[0],rows
+    assert len(rows)==1 and rows[0]['protocol']=='tello-binary' and 'manipulation_detection' not in rows[0],rows
     assert conns[0]['drone_protocol']=='tello-binary',conns;cases+=1
     for packets in ([frame(0)]*8,[frame(0),frame(1)],
                     [p[:-1]+bytes([p[-1]^1]) for p in [frame(i) for i in range(5)]],
@@ -67,7 +67,7 @@ def main():
     for i in range(75):
         packets.extend([frame(i%10),frame(i)[:-4]]);times.extend([i,i+.1])
     rows,_=replay(packets,times=times)
-    assert any(len(r.get('alert',[]))==2 for r in rows),rows
+    assert any(len(r.get('manipulation_detection',[]))==2 for r in rows),rows
     assert len(rows)==2,rows;cases+=1
     # Evidence from an unconfirmed direction can't create an alert.
     packets=[frame(i%10) if i%2==0 else frame(3)[:-4] for i in range(75)]

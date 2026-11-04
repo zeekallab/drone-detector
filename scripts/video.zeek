@@ -24,6 +24,7 @@ type State: record {
     budget_start: time;
     inspected: count &default=0;
     limited: bool &default=F;
+    logging: DroneDetector::LogState &default=DroneDetector::LogState();
     last_log: time &optional;
     confirmed: bool &default=F;
 };
@@ -53,6 +54,8 @@ function evidence(s: State): bool
     for ( k in s$slices ) if ( network_time()-s$slices[k] > evidence_age ) return F;
     return T;
     }
+
+global emit: function(c: connection, final: bool);
 
 event udp_contents(c: connection, is_orig: bool, contents: string)
     {
@@ -91,12 +94,20 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
     observe_slice(s,data);
     if ( ! evidence(s) ) return;
     s$confirmed=T;
-    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
-    DroneDetector::write_log([$ts=network_time(),$event_type=s?$last_log ? "update" : "detection",
+    s$logging$dirty=T;
+    emit(c,F);
+    }
+
+function emit(c: connection, final: bool)
+    {
+    local s=c$drone_video;
+    local kind=DroneDetector::connection_log_kind(c,s$logging,set(),final);
+    if ( kind == "" ) return;
+    DroneDetector::write_state([$ts=network_time(),$event_type=s?$last_log ? "update" : "detection",
         $uid=c$uid,$id=c$id,$likely_manufacturer="DJI/Ryze",$protocol="tello-video",
         $evidence="recent-sdk-state-pair+h264-annex-b-sps-pps-idr+distinct-slice-prefixes",
-        $inspection_limited=s$limited,$drone_host=source,$controller_host=dest,
-        $video_active=T,$video_codec="H264"]);
+        $inspection_limited=s$limited,$drone_host=s$drone,$controller_host=s$controller,
+        $video_active=T,$video_codec="H264"],s$logging,kind);
     s$last_log=network_time(); c$drone_log_ts=network_time();
     }
 
@@ -105,7 +116,9 @@ event zeek_init() &priority=5
 
 event connection_state_remove(c: connection) &priority=0
     {
-    if ( ! c?$drone_video || ! c$drone_video$confirmed || ! c?$conn ) return;
+    if ( ! c?$drone_video || ! c$drone_video$confirmed ) return;
+    emit(c,T);
+    if ( ! c?$conn ) return;
     c$conn$drone_protocol="tello-video";
     c$conn$drone_likely_manufacturer="DJI/Ryze";
     c$conn$drone_evidence="recent-sdk-state-pair+h264-annex-b";

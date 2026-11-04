@@ -28,7 +28,7 @@ def main():
     rows,_=run(capture(frames),settings,live=True)
     assert len(rows)==1 and rows[0]['protocol']=='802.11' and rows[0]['wireless_deauth_frames']==20,rows
     assert rows[0]['wireless_ssid']=='TELLO-58ECCC' and 'uid' not in rows[0] and 'id.orig_h' not in rows[0],rows
-    assert 'Wireless deauthentication burst' in rows[0]['alert'][0],rows
+    assert 'Wireless deauthentication burst' in rows[0]['manipulation_detection'][0],rows
     cases=1
     for fs in ([beacon()]+[deauth(i) for i in range(19)],
                [beacon(b'ordinary-wifi')]+[deauth(i) for i in range(40)],

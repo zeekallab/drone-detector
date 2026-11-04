@@ -4,17 +4,20 @@ A Zeek package that identifies supported drone protocols and writes observations
 and suspicious activity to one manufacturer-neutral **`drone.log`**.
 
 Supports legacy DJI Phantom Vision, Tello SDK/binary control, and MAVLink 1/2.
-Logs on confirmation and then at most once per minute per connection (SDK command
-summaries are limited per host pair). Traffic can also come from simulators or
-replays; detection does not prove a drone is airborne or being taken over.
+Logs when a protocol is confirmed, routine updates at most once per minute,
+new manipulation findings promptly, and a final summary if activity remains
+unreported. Flight changes alone do not generate extra records. Traffic can
+come from simulators or replays; detection does not prove a drone is airborne.
 
-## Latest changes — v0.13.0
+## Latest changes — v0.14.0
 
-**Video detection across workers:** confirmed Tello drone/controller pairs are
-now shared through the Zeek cluster, allowing telemetry and video connections
-on different workers to correlate. Sharing is automatic with the full package,
-throttled and bounded; H.264 checks and the minute logging limit remain unchanged.
-See [cluster requirements and tests](EXTENDED_README.md#cluster-correlation).
+**Findings no longer wait for the next minute:** each new finding type can
+produce a prompt record, and pending activity is summarized on flow close or
+timeout. Repeated findings remain rate-limited. The `alert` field is renamed
+**`manipulation_detection`**; `event_type`, `evidence`, and `protocol` keep their
+names. See [logging details](EXTENDED_README.md#logging-and-finding-delivery--v0140).
+
+Video identity sharing across cluster workers from v0.13.0 remains enabled.
 
 ### Earlier changes — v0.12.2
 

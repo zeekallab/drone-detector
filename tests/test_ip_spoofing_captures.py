@@ -24,7 +24,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='drone-ip-spoofing-') as tmp:
             result = subprocess.run(
                 [os.environ.get('ZEEK', 'zeek'), '-C', '-r', str(p),
-                 str(ROOT / 'scripts'), 'LogAscii::use_json=T'],
+                 str(ROOT / 'scripts'), 'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],
                 cwd=tmp, capture_output=True, text=True)
             assert result.returncode == 0, (p.name, result.stderr)
             assert not (Path(tmp) / 'reporter.log').exists(), p.name
@@ -32,7 +32,7 @@ def main():
             rows = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             binary = [row for row in rows if row['protocol'] == 'tello-binary']
             assert binary, p.name
-            hits = sum(ALERT in row.get('alert', []) for row in binary)
+            hits = sum(ALERT in row.get('manipulation_detection', []) for row in binary)
             assert hits, p.name
             groups = {}
             for row in rows:

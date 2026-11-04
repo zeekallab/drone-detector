@@ -158,7 +158,7 @@ function telemetry_view(t: Telemetry): TelemetryView
     return v;
     }
 
-global emit: function(c: connection);
+global emit: function(c: connection, final: bool);
 
 type Indicator: record {
     kind: string;
@@ -198,6 +198,7 @@ type State: record {
     controls: table[string] of Control;
     indicators: table[string] of Indicator;
     activity_limited: bool &default=F;
+    logging: DroneDetector::LogState &default=DroneDetector::LogState();
     last_log: time &optional;
     budget_start: time;
     telemetry: table[count, count] of Telemetry;
@@ -716,7 +717,7 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
         off += total;
         }
     if ( s$inspected >= max_inspected_bytes ) s$limited = T;
-    if ( s$orig + s$resp > before ) emit(c);
+    if ( s$orig + s$resp > before ) { s$logging$dirty=T; emit(c,F); }
     }
 
 event zeek_init() &priority=5
@@ -736,12 +737,28 @@ event connection_flipped(c: connection)
     c$mavlink_state$resp = previous;
     }
 
-function emit(c: connection)
+function emit(c: connection, final: bool)
     {
-    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
     local s = c$mavlink_state;
     if ( ! s$heartbeat || |s$evidence_frames| < minimum_evidence_messages ) return;
-    if ( s?$last_log && network_time() - s$last_log < DroneDetector::log_interval ) return;
+    local findings: set[string]=set();
+    for ( key in s$indicators )
+        {
+        local indicator_kind = s$indicators[key]$kind;
+        local description = "";
+        if ( indicator_kind == "position_discontinuity" )
+            description = "mavlink anomaly indicator - position discontinuity";
+        else if ( indicator_kind == "altitude_discontinuity" )
+            description = "mavlink anomaly indicator - Altitude discontinuity";
+        else if ( indicator_kind == "multiple_control_system_ids" )
+            description = "mavlink anomaly indicator - Multiple control system IDs";
+        if ( description != "" )
+            {
+            add findings[description];
+            }
+        }
+    local kind=DroneDetector::connection_log_kind(c,s$logging,findings,final);
+    if ( kind == "" ) return;
     local evidence = "framing+crc_extra+heartbeat";
     local rec = DroneDetector::Info($ts=network_time(), $event_type=s?$last_log ? "update" : "detection", $uid=c$uid, $id=c$id,
         $likely_manufacturer="unknown", $protocol="mavlink", $evidence=evidence,
@@ -775,22 +792,6 @@ function emit(c: connection)
     local controls: vector of Control = vector();
     for ( key in s$controls ) controls[|controls|] = s$controls[key];
     if ( |controls| > 0 ) rec$control_activity = to_json(controls);
-    for ( key in s$indicators )
-        {
-        local kind = s$indicators[key]$kind;
-        local description = "";
-        if ( kind == "position_discontinuity" )
-            description = "mavlink anomaly indicator - position discontinuity";
-        else if ( kind == "altitude_discontinuity" )
-            description = "mavlink anomaly indicator - Altitude discontinuity";
-        else if ( kind == "multiple_control_system_ids" )
-            description = "mavlink anomaly indicator - Multiple control system IDs";
-        if ( description != "" )
-            {
-            if ( ! rec?$alert ) rec$alert = set();
-            add rec$alert[description];
-            }
-        }
     rec$activity_limited = s$activity_limited;
     if ( ! DroneDetector::include_diagnostics )
         {
@@ -811,7 +812,7 @@ function emit(c: connection)
         delete rec$malformed_frames;
         }
     if ( |s$autopilots| == 0 ) delete rec$autopilot_software;
-    DroneDetector::write_log(rec);
+    DroneDetector::write_state(rec,s$logging,kind);
     c$drone_log_ts=network_time();
     s$controls = table();
     s$indicators = table();
@@ -821,6 +822,7 @@ function emit(c: connection)
 event connection_state_remove(c: connection) &priority=0
     {
     if ( ! c?$mavlink_state ) return;
+    emit(c,T);
     local s = c$mavlink_state;
     if ( ! s$heartbeat || |s$evidence_frames| < minimum_evidence_messages ) return;
     local evidence = "framing+crc_extra+heartbeat";

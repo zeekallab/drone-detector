@@ -13,7 +13,7 @@ def replay(items,settings='',state=True):
     assert all('orig_messages' not in r and 'resp_messages' not in r for r in summaries)
     return summaries,rows
 
-def alert(rows,prefix):return any(any(x.startswith(prefix) for x in r.get('alert',[])) for r in rows)
+def alert(rows,prefix):return any(any(x.startswith(prefix) for x in r.get('manipulation_detection',[])) for r in rows)
 def main():
     seq=[cmd(3,b'command',40000)]+[cmd(5+i*3,[b'forward 20',b'back 20'][i%2],40001+i) for i in range(20)]+[cmd(65,b'battery?',40100)]
     rows,_=replay(seq)

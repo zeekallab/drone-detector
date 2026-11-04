@@ -14,7 +14,7 @@ def main():
         assert hashlib.sha256(capture.read_bytes()).hexdigest()==e['sha256'],e
         with tempfile.TemporaryDirectory(prefix='drone-uvic-') as tmp:
             tmp=Path(tmp);(tmp/'package').symlink_to(ROOT/'scripts',target_is_directory=True)
-            (tmp/'settings.zeek').write_text('@load ./package\nredef LogAscii::use_json = T;\nredef DroneMAVLink::ports += {8889/udp,8890/udp};\n')
+            (tmp/'settings.zeek').write_text('@load ./package\nredef LogAscii::use_json = T;\nredef DroneDetector::immediate_detections = F;\nredef DroneDetector::final_updates = F;\nredef DroneMAVLink::ports += {8889/udp,8890/udp};\n')
             # Force application inspection even if capture transport checksums are bad.
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(capture),'settings.zeek'],cwd=tmp,capture_output=True,text=True)
             assert r.returncode==0,r.stdout+r.stderr

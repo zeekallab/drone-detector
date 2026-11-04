@@ -52,6 +52,7 @@ type Direction: record {
 type State: record {
     orig: Direction;
     resp: Direction;
+    logging: DroneDetector::LogState &default=DroneDetector::LogState();
     last_log: time &optional;
     budget_start: time;
     inspected: count &default=0;
@@ -86,11 +87,9 @@ function confirmed(d: Direction): bool
 
 global reset_window: function(d: Direction);
 
-function emit(c: connection, s: State)
+function emit(c: connection, s: State, final: bool)
     {
-    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
     if ( ! confirmed(s$orig) && ! confirmed(s$resp) ) return;
-    if ( s?$last_log && network_time()-s$last_log < DroneDetector::log_interval ) return;
     local alerts: set[string] = set();
     for ( d in vector(s$orig,s$resp) )
         {
@@ -104,6 +103,8 @@ function emit(c: connection, s: State)
         if ( dir$malformed >= malformed_min_frames )
             add alerts["Malformed control traffic: repeated Tello joystick length or checksum failures"];
         }
+    local kind=DroneDetector::connection_log_kind(c,s$logging,alerts,final);
+    if ( kind == "" ) return;
     local rec=DroneDetector::Info($ts=network_time(),$event_type=s?$last_log ? "update" : "detection",
         $uid=c$uid,$id=c$id,$likely_manufacturer="DJI/Ryze",$protocol="tello-binary",
         $evidence="length+header-crc8+frame-crc16",$orig_messages=s$orig$valid,$resp_messages=s$resp$valid,
@@ -115,8 +116,8 @@ function emit(c: connection, s: State)
     rec$binary_rapid_replayed_frames=s$orig$rapid_repeats+s$resp$rapid_repeats;
     rec$binary_rapid_replayed_distinct=(s$orig?$rapid_keys ? |s$orig$rapid_keys| : 0) +
         (s$resp?$rapid_keys ? |s$resp$rapid_keys| : 0);
-    if ( |alerts| > 0 ) rec$alert=alerts;
-    DroneDetector::write_log(rec);
+    if ( |alerts| > 0 ) rec$manipulation_detection=alerts;
+    DroneDetector::write_state(rec,s$logging,kind);
     c$drone_log_ts=network_time();
     s$last_log=network_time();
     reset_window(s$orig); reset_window(s$resp);
@@ -196,10 +197,10 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
     local valid=le(contents,1)/8 == |contents| && frame_ok(contents);
     if ( ! valid )
         {
-        if ( stick && confirmed(d) ) { ++d$malformed; emit(c,s); }
+        if ( stick && confirmed(d) ) { ++d$malformed; s$logging$dirty=T; emit(c,s,F); }
         return;
         }
-    ++d$valid;
+    ++d$valid; s$logging$dirty=T;
     local key=sha256_hash(contents);
     if ( |d$evidence| < minimum_valid_frames ) add d$evidence[key];
     if ( stick && confirmed(d) )
@@ -219,7 +220,7 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
         if ( key in d$seen || |d$seen| < max_fingerprints ) d$seen[key]=network_time();
         else s$tracking_limited=T;
         }
-    emit(c,s);
+    emit(c,s,F);
     }
 
 event zeek_init() &priority=5
@@ -247,7 +248,9 @@ event connection_flipped(c: connection)
 
 event connection_state_remove(c: connection) &priority=0
     {
-    if ( ! c?$tello_binary || ! c?$conn ) return;
+    if ( ! c?$tello_binary ) return;
+    emit(c,c$tello_binary,T);
+    if ( ! c?$conn ) return;
     if ( ! confirmed(c$tello_binary$orig) && ! confirmed(c$tello_binary$resp) ) return;
     c$conn$drone_protocol="tello-binary";
     c$conn$drone_likely_manufacturer="DJI/Ryze";

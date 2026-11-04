@@ -53,7 +53,11 @@ def capture(chunks, port=2001):
     return out
 
 
-def run(data, settings='', live=False):
+def run(data, settings='', live=False, lifecycle=False):
+    # Legacy threshold regressions retain their original emission policy.
+    # test_logging_policy exercises the production defaults independently.
+    if not lifecycle:
+        settings = 'redef DroneDetector::immediate_detections = F;\nredef DroneDetector::final_updates = F;\n' + settings
     # Parser regressions inspect the final event snapshot; timing tests use defaults.
     if not live:
         settings = 'redef DroneDetector::log_interval = 0secs;\nredef DroneDetector::include_diagnostics = T;\n' + settings

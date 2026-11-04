@@ -18,7 +18,7 @@ def replay(commands,times=None,settings='',state=True,replies=(),finish=65):
     return rows
 
 
-def has(rows):return any(any(a.startswith('Repetitive maneuver') for a in r.get('alert',[])) for r in rows)
+def has(rows):return any(any(a.startswith('Repetitive maneuver') for a in r.get('manipulation_detection',[])) for r in rows)
 
 
 def main():

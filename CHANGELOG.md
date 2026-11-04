@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.14.0
+
+- Rename `alert` to `manipulation_detection`; preserve `event_type`, `evidence`, and `protocol`.
+- Report the first occurrence of each finding promptly, retaining minute-limited routine updates.
+- Flush unreported activity/findings at flow close or timeout without unconditional duplicate records.
+- Keep SDK command summaries shared across contributing flows and retain live shared state until final flush.
+- Add production-default lifecycle regressions; retain explicit legacy-policy threshold tests.
+- Preserve protocol evidence thresholds and cross-worker video correlation.
+
+
 ## 0.13.0 — 2026-11-04
 
 - Share confirmed Tello SDK pair evidence across Zeek workers via a proxy relay,

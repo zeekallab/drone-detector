@@ -25,7 +25,7 @@ def capture(extra,telemetry=True):
 
 def check(packets,expected,settings='',telemetry=True,enabled=True):
     rows,_=run(capture(packets,telemetry),('@load ./package/arp\n' if enabled else '')+settings,live=True)
-    hits=[r for r in rows if any(a.startswith('ARP interception') for a in r.get('alert',[]))]
+    hits=[r for r in rows if any(a.startswith('ARP interception') for a in r.get('manipulation_detection',[]))]
     assert bool(hits)==expected,(expected,rows)
     assert all(b['ts']-a['ts']>=60 for a,b in zip(rows,rows[1:])),rows
     if hits:assert set(hits[-1]['arp_claimed_ips'])=={A,B} and hits[-1]['arp_claimant_macs']==['c8:78:7d:96:67:d7']

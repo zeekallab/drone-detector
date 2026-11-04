@@ -66,6 +66,8 @@ type State: record {
     confirmed: bool &default=F;
     limited: bool &default=F;
     activity_limited: bool &default=F;
+    logging: DroneDetector::LogState &default=DroneDetector::LogState();
+    active_connections: count &default=0;
     last_log: time &optional;
     drone: addr &optional;
     controller: addr &optional;
@@ -85,10 +87,16 @@ type State: record {
     error_responses: count &default=0;
     unknown_responses: count &default=0;
 };
-redef record connection += { tello_state: State &optional; };
+redef record connection += { tello_state: State &optional; sdk_summary: State &optional; };
 
 # Command summaries and patterns are keyed by ordered host pair, not UDP socket.
-global control_pairs: table[addr,addr] of State &write_expire=correlation_age;
+function expire_control_pair(t: table[addr,addr] of State, drone: addr, controller: addr): interval
+    {
+    # A live flow retains the shared object so its final flush cannot be orphaned.
+    if ( t[drone,controller]$active_connections > 0 ) return correlation_age;
+    return 0secs;
+    }
+global control_pairs: table[addr,addr] of State &write_expire=correlation_age &expire_func=expire_control_pair;
 global control_tracking_limited_until: time = double_to_time(0.0);
 
 # Imported evidence must remain bounded and must never roll back a newer timestamp.
@@ -225,10 +233,16 @@ function observe_maneuver(s: State, data: string)
          reversals >= maneuver_min_reversals ) add s$repetitive_axes[axis];
     }
 
-function emit(c: connection, s: State, pair_summary: bool)
+function emit(c: connection, s: State, pair_summary: bool, final: bool)
     {
-    if ( c?$drone_log_ts && network_time()-c$drone_log_ts < DroneDetector::log_interval ) return;
-    if ( ! s$confirmed || (s?$last_log && network_time() - s$last_log < DroneDetector::log_interval) ) return;
+    if ( ! s$confirmed ) return;
+    local findings: set[string]=set();
+    if ( |s$repetitive_axes| > 0 )
+        add findings["Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests"];
+    if ( pair_summary && s$churn )
+        add findings["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"];
+    local kind=DroneDetector::connection_log_kind(c,s$logging,findings,final);
+    if ( kind == "" ) return;
     local rec = DroneDetector::Info($ts=network_time(),$event_type=s?$last_log ? "update" : "detection",
         $uid=c$uid,$id=c$id,$likely_manufacturer="DJI/Ryze",$protocol="tello-sdk",
         $evidence=s?$telemetry ? "repeated-sdk-state" : "sdk-command+recent-state-pair",
@@ -241,7 +255,7 @@ function emit(c: connection, s: State, pair_summary: bool)
     if ( |activities| > 0 ) rec$control_activity = to_json(activities);
     if ( |s$repetitive_axes| > 0 )
         {
-        rec$alert=set("Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests");
+        rec$manipulation_detection=set("Repetitive maneuver commands: repeated opposing Tello SDK movement or rotation requests");
         rec$sdk_repetitive_axes=s$repetitive_axes;
         }
     if ( s$ok_responses+s$error_responses+s$unknown_responses > 0 )
@@ -267,11 +281,11 @@ function emit(c: connection, s: State, pair_summary: bool)
         delete rec$orig_messages; delete rec$resp_messages;
         if ( s$churn )
             {
-            if ( ! rec?$alert ) rec$alert=set();
-            add rec$alert["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"];
+            if ( ! rec?$manipulation_detection ) rec$manipulation_detection=set();
+            add rec$manipulation_detection["Control source-port churn: repeated Tello SDK commands from many source ports to the same drone"];
             }
         }
-    DroneDetector::write_log(rec);
+    DroneDetector::write_state(rec,s$logging,kind);
     c$drone_log_ts=network_time();
     s$activity = table();
     s$repetitive_axes=set();
@@ -333,7 +347,9 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
             track_uid(replies,c$uid);
             s$confirmed=T; s$drone=source; s$controller=destination;
             control_pairs[source,destination]=replies;
-            emit(c,replies,T); return;
+            if ( ! c?$sdk_summary ) { c$sdk_summary=replies; ++replies$active_connections; }
+            replies$logging$dirty=T;
+            emit(c,replies,T,F); return;
             }
         if ( ! sdk_command(data) || dp !in command_ports || ! recent_pair(destination,source) ) return;
         s$has_commands=T; s$confirmed=T; s$drone=destination; s$controller=source;
@@ -345,14 +361,8 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
                 $maneuvers=table(),$repetitive_axes=set(),$confirmed=T,$drone=destination,$controller=source);
             }
         local shared=control_pairs[destination,source];
-        # A stale command context must not survive indefinitely on reply traffic.
-        if ( shared?$command_ts && network_time()-shared$command_ts > correlation_age )
-            {
-            local previous=shared;
-            shared=State($budget_start=network_time(),$activity=table(),$maneuvers=table(),
-                $repetitive_axes=set(),$confirmed=T,$drone=destination,$controller=source);
-            if ( previous?$last_log ) shared$last_log=previous$last_log;
-            }
+        # Keep pending summaries until the last contributing flow closes.
+        # Maneuver and source-port helpers prune their own time windows.
         shared$command_ts=network_time(); ++shared$command_count;
         if ( s$limited ) shared$limited=T;
         observe_maneuver(shared,data); observe_port(shared,sp); track_uid(shared,c$uid);
@@ -363,10 +373,12 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
                 $first_seen=network_time(),$last_seen=network_time(),$observations=1);
         else shared$activity_limited=T;
         control_pairs[destination,source]=shared;
-        emit(c,shared,T); return;
+        if ( ! c?$sdk_summary ) { c$sdk_summary=shared; ++shared$active_connections; }
+        shared$logging$dirty=T;
+        emit(c,shared,T,F); return;
         }
     if ( is_orig ) ++s$orig; else ++s$resp;
-    emit(c,s,F);
+    s$logging$dirty=T; emit(c,s,F,F);
     }
 
 event zeek_init() &priority=5
@@ -384,7 +396,18 @@ event connection_flipped(c: connection)
 
 event connection_state_remove(c: connection) &priority=0
     {
-    if ( ! c?$tello_state || ! c$tello_state$confirmed || ! c?$conn ) return;
+    if ( c?$sdk_summary )
+        {
+        local summary=c$sdk_summary;
+        if ( summary$active_connections > 0 ) --summary$active_connections;
+        if ( summary$active_connections == 0 )
+            {
+            emit(c,summary,T,T);
+            }
+        }
+    if ( ! c?$tello_state || ! c$tello_state$confirmed ) return;
+    if ( c$tello_state?$telemetry ) emit(c,c$tello_state,F,T);
+    if ( ! c?$conn ) return;
     c$conn$drone_protocol="tello-sdk";
     c$conn$drone_likely_manufacturer="DJI/Ryze";
     c$conn$drone_evidence=c$tello_state?$telemetry ? "repeated-sdk-state" : "sdk-command+recent-state-pair";

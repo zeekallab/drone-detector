@@ -14,11 +14,11 @@ def main():
     for group,name in groups:
         with tempfile.TemporaryDirectory(prefix='drone-isot-alerts-') as tmp:
             module=ROOT/'scripts/wifi.zeek' if group=='Password Cracking' else ROOT/'scripts'
-            r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(BASE/group/name),str(module),'LogAscii::use_json=T'],cwd=tmp,text=True,capture_output=True)
+            r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(BASE/group/name),str(module),'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],cwd=tmp,text=True,capture_output=True)
             assert r.returncode==0,r.stderr
             assert not (Path(tmp)/'reporter.log').exists(),name
             f=Path(tmp)/'drone.log';rows=[json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
-            alerts=[a for row in rows for a in row.get('alert',[])]
+            alerts=[a for row in rows for a in row.get('manipulation_detection',[])]
             if group=='Manipulation':
                 assert any(a.startswith('Replay-like control traffic:') for a in alerts),(name,alerts)
                 assert any(a.startswith('Malformed control traffic:') for a in alerts),(name,alerts)

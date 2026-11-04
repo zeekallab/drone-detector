@@ -20,7 +20,7 @@ def main():
             # MAVLink CRC and CRC_EXTRA are still checked.
             settings=tmp/'settings.zeek'
             (tmp/'package').symlink_to(ROOT/'scripts',target_is_directory=True)
-            settings.write_text('@load ./package\nredef LogAscii::use_json = T;\n' +
+            settings.write_text('@load ./package\nredef LogAscii::use_json = T;\nredef DroneDetector::immediate_detections = F;\nredef DroneDetector::final_updates = F;\n' +
                                 f'redef DroneDetector::include_diagnostics = {"T" if diagnostic else "F"};\n')
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(DEST),str(settings)],cwd=tmp,text=True,capture_output=True)
             assert r.returncode==0,r.stdout+r.stderr
