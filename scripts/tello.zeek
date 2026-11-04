@@ -3,6 +3,9 @@
 module DroneTello;
 
 export {
+    # Invoked only after local SDK state confirmation; standalone has no handler.
+    global local_pair_confirmed: hook(drone: addr, controller: addr, ts: time);
+    global receive_pair: function(drone: addr, controller: addr, ts: time): bool;
     global recent_pair: function(drone: addr, controller: addr): bool;
     const command_ports: set[port] = { 8889/udp } &redef;
     const state_ports: set[port] = { 8890/udp } &redef;
@@ -36,7 +39,8 @@ export {
     };
 }
 
-# Worker-local pair learning. Never infer identity from a port or a generic "ok".
+# Local pair cache; cluster.zeek distributes confirmed evidence between workers.
+# Never infer identity from a port or a generic "ok".
 global known_pairs: table[addr,addr] of time &write_expire=correlation_age;
 function recent_pair(drone: addr, controller: addr): bool
     {
@@ -86,6 +90,24 @@ redef record connection += { tello_state: State &optional; };
 # Command summaries and patterns are keyed by ordered host pair, not UDP socket.
 global control_pairs: table[addr,addr] of State &write_expire=correlation_age;
 global control_tracking_limited_until: time = double_to_time(0.0);
+
+# Imported evidence must remain bounded and must never roll back a newer timestamp.
+function receive_pair(drone: addr, controller: addr, ts: time): bool
+    {
+    local now = network_time();
+    if ( now-ts > correlation_age || ts-now > 5secs ) return F;
+    if ( [drone,controller] in known_pairs )
+        {
+        if ( ts <= known_pairs[drone,controller] ) return F;
+        }
+    else if ( |known_pairs| >= max_known_pairs )
+        {
+        control_tracking_limited_until=now+correlation_age;
+        return F;
+        }
+    known_pairs[drone,controller]=ts;
+    return T;
+    }
 
 function track_uid(s: State, uid: string)
     {
@@ -284,7 +306,10 @@ event udp_contents(c: connection, is_orig: bool, contents: string)
             {
             s$confirmed=T;
             if ( [source,destination] in known_pairs || |known_pairs| < max_known_pairs )
+                {
                 known_pairs[source,destination]=network_time();
+                hook local_pair_confirmed(source,destination,network_time());
+                }
             else s$activity_limited=T;
             }
         local t = Telemetry($height_cm=state["h"], $tof_distance_cm=state["tof"],

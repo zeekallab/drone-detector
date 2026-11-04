@@ -1,8 +1,53 @@
-# Drone detector — extended documentation (v0.12.2)
+# Drone detector — extended documentation (v0.13.0)
 
 [Back to the project overview](README.md)
 
-## What's new — v0.12.2
+## What's new — v0.13.0
+
+Confirmed Tello SDK drone/controller pairs are shared across cluster workers by
+`cluster.zeek`, loaded by the default package. This fixes the worker-local
+correlation limitation for video and SDK command identification. The video parser,
+protocol confirmation, field layout and rate limits are unchanged.
+
+## Cluster correlation
+
+The full package automatically loads `cluster.zeek`. Standalone Zeek keeps local
+pair learning without network publication. In a cluster, the worker that confirms
+SDK state publishes the ordered drone/controller pair and observation time via
+`Cluster::publish_hrw` to a proxy, which relays it to the worker topic. Workers
+never rebroadcast imported evidence. No packets, video payloads or log records
+are sent by this mechanism.
+
+Pairs publish initially and refresh at most once every 10 seconds per originating
+worker/pair. The receiving and publication caches each retain at most
+`DroneTello::max_known_pairs` entries (default 1,024). Imported evidence cannot
+roll back a newer observation, survives for at most `correlation_age` (120 seconds
+by default), and is rejected if more than five seconds ahead of the receiving
+node's clock. Keep cluster clocks synchronized. Omitted evidence due to a storage
+bound sets the existing `activity_limited` warning on subsequent SDK records.
+
+```zeek
+# Optional tuning after loading the full package:
+redef DroneTello::pair_publish_interval = 10secs;
+```
+
+The interval must be positive and shorter than `correlation_age`. A working Zeek
+cluster backend and proxy pool are required. If a proxy is unavailable, local
+pair learning still works; subsequent SDK state retries publication. Evidence
+can take up to the refresh interval to reach a newly connected worker; very short
+streams or missing/reordered messages may still be missed. This is best-effort
+sharing of observed protocol evidence, not authentication or persistent state.
+SDK command histories and counters remain worker-local; this change does not
+provide cluster-wide maneuver/churn aggregation or ARP correlation.
+
+Validated with Zeek 9.0.1: four real Broker-connected processes (manager, proxy,
+SDK worker, video worker), synthetic UDP-content events split between workers,
+one video log record, publication throttling/refresh, expiry, out-of-order input,
+and receiver bounds. Run `python3 tests/test_cluster.py` separately from the
+normal suite; it requires local loopback sockets. Live Corelight validation is
+still required. [Validation results](validation/v0.13.0-results.md).
+
+## Earlier updates — v0.12.2
 
 `sdk_related_uids` is omitted when empty or when it only repeats the record's
 `uid`. If any tracked contributing UID differs, the full tracked set is retained,
@@ -231,7 +276,7 @@ redef DroneVideo::prefix_bytes = 128;
 redef DroneVideo::max_inspected_bytes = 4194304;
 ```
 
-Telemetry and video must reach the same worker. Encrypted/proprietary RF links,
+Telemetry and video can reach different workers when cluster correlation is available. See [cluster requirements](#cluster-correlation). Encrypted/proprietary RF links,
 analog FPV, RTP/RTSP, other codecs, Tello's different binary video transport,
 fragmented parameter sets/start codes and unsupported ports are outside this
 initial coverage. A drone may stream while stationary, record without streaming,
@@ -891,9 +936,9 @@ Ports, MAC addresses, video or generic `ok` responses never establish identity.
 
 After state confirmation, recognized SDK commands on the same observed drone/
 controller IP pair can identify the command connection. Pair knowledge expires
-(default 120 seconds) and is bounded (default 1,024 pairs). It is **worker-local**:
-if a cluster distributes the state and command flows to different workers,
-state detection still works but command correlation may be unavailable. Command
+(default 120 seconds) and is bounded (default 1,024 pairs per worker). Confirmed
+pair evidence is shared by the default cluster module; command summaries and
+behavioral histories remain worker-local. See [cluster correlation](#cluster-correlation). Command
 traffic before state confirmation, or without recent state, is not classified.
 
 Tello writes `protocol=tello-sdk`, `likely_manufacturer=DJI/Ryze`, `drone_host`,
