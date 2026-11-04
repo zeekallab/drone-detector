@@ -66,8 +66,10 @@ not proof of an authorized or currently active pilot.
 
 Coverage initially targets this Tello SDK raw H.264 format. Proprietary/encrypted
 radio links, analog FPV, RTP/RTSP, other codecs, the alternative binary Tello
-video transport, and streams without visible SDK state are not covered. SDK state
-and video must reach the same worker. Bounded prefix inspection can miss headers
+video transport, and streams without visible SDK state are not covered. Since v0.13.0, SDK state
+and video may reach different workers when the default cluster module and proxy
+relay are operational. Previously they had to reach the same worker. See
+[cluster requirements](../EXTENDED_README.md#cluster-correlation). Bounded prefix inspection can miss headers
 outside the inspected prefix or split across datagrams. Identification uses up
 to 128 bytes per packet and 4 MiB per connection per minute by default. Budget
 exhaustion is reported with `inspection_limited`; it can cause missed evidence.

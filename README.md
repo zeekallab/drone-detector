@@ -8,7 +8,15 @@ Logs on confirmation and then at most once per minute per connection (SDK comman
 summaries are limited per host pair). Traffic can also come from simulators or
 replays; detection does not prove a drone is airborne or being taken over.
 
-## Latest changes — v0.12.2
+## Latest changes — v0.13.0
+
+**Video detection across workers:** confirmed Tello drone/controller pairs are
+now shared through the Zeek cluster, allowing telemetry and video connections
+on different workers to correlate. Sharing is automatic with the full package,
+throttled and bounded; H.264 checks and the minute logging limit remain unchanged.
+See [cluster requirements and tests](EXTENDED_README.md#cluster-correlation).
+
+### Earlier changes — v0.12.2
 
 `sdk_related_uids` now appears only when it adds a connection ID beyond the
 record's `uid`. Single-connection summaries omit the redundant field; summaries

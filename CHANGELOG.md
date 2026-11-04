@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.0 — 2026-11-04
+
+- Share confirmed Tello SDK pair evidence across Zeek workers via a proxy relay,
+  enabling cross-worker video/command identification without relaxing protocol checks.
+- Replace the PR's forward function call with a declared local hook; use the Zeek 9
+  worker-topic constant correctly. Standalone loading remains supported.
+- Throttle pair refreshes, bound sender/receiver caches, preserve newest timestamps,
+  and reject stale/far-future evidence. Keep the existing minute log gate.
+- Add a four-process Broker integration test with separate SDK/video workers.
+
 ## 0.12.2 — 2026-11-03
 
 - Omit sdk_related_uids when empty or redundant with uid; retain the contributing

@@ -4,43 +4,46 @@
 module DroneTello;
 
 export {
-	## Broadcasts a confirmed drone/controller pair to every worker, so a
-	## worker handling an unrelated UDP flow (e.g. the video stream on
-	## 11111) can still satisfy recent_pair() even if it never saw the SDK
-	## state messages (port 8890) that originally confirmed the pair.
-	##
-	## known_pairs is otherwise worker-local: in a Zeek cluster, the state
-	## flow and the video flow for the same drone/controller pair can land
-	## on different workers, since each UDP 5-tuple is hashed independently.
-	global pair_confirmed: event(drone: addr, controller: addr, ts: time);
-
-	## Call this immediately after writing known_pairs[drone,controller].
-	## No-op outside a cluster, where a single known_pairs table is already
-	## shared by every connection.
-	global publish_pair: function(drone: addr, controller: addr, ts: time);
+    ## Share initially, then refresh at most once per interval per local pair.
+    const pair_publish_interval = 10secs &redef;
+    global pair_confirmed: event(drone: addr, controller: addr, ts: time);
 }
 
 @if ( Cluster::is_enabled() )
 
-function publish_pair(drone: addr, controller: addr, ts: time)
-	{
-	# hrw keeps repeated confirmations of the same pair routed to the same
-	# proxy; the proxy then rebroadcasts to every worker below.
-	Cluster::publish_hrw(Cluster::proxy_pool, cat(drone, controller),
-	                      pair_confirmed, drone, controller, ts);
-	}
+global pair_last_publish: table[addr,addr] of time &write_expire=correlation_age;
+
+hook local_pair_confirmed(drone: addr, controller: addr, ts: time)
+    {
+    if ( Cluster::local_node_type() != Cluster::WORKER ) return;
+    if ( [drone,controller] in pair_last_publish )
+        {
+        if ( ts-pair_last_publish[drone,controller] < pair_publish_interval ) return;
+        }
+    else if ( |pair_last_publish| >= max_known_pairs )
+        {
+        control_tracking_limited_until=network_time()+correlation_age;
+        return;
+        }
+    # Don't consume the refresh slot while the proxy pool is unavailable.
+    if ( Cluster::publish_hrw(Cluster::proxy_pool, fmt("%s/%s",drone,controller),
+                             pair_confirmed, drone, controller, ts) )
+        pair_last_publish[drone,controller]=ts;
+    }
 
 event pair_confirmed(drone: addr, controller: addr, ts: time)
-	{
-	if ( Cluster::local_node_type() == Cluster::PROXY )
-		Cluster::publish(Cluster::worker_topic(), pair_confirmed, drone, controller, ts);
+    {
+    if ( network_time()-ts > correlation_age || ts-network_time() > 5secs ) return;
+    if ( Cluster::local_node_type() == Cluster::PROXY )
+        Cluster::publish(Cluster::worker_topic, pair_confirmed, drone, controller, ts);
+    else if ( Cluster::local_node_type() == Cluster::WORKER )
+        receive_pair(drone,controller,ts);
+    }
 
-	if ( Cluster::local_node_type() == Cluster::WORKER )
-		known_pairs[drone,controller] = ts;
-	}
-
-@else
-
-function publish_pair(drone: addr, controller: addr, ts: time) { }
+event zeek_init()
+    {
+    if ( pair_publish_interval <= 0secs || pair_publish_interval >= correlation_age )
+        Reporter::fatal("DroneTello::pair_publish_interval must be positive and less than correlation_age");
+    }
 
 @endif
