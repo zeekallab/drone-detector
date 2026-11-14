@@ -51,9 +51,17 @@ function le32s(data: string, offset: count): double
 function align(cursor: count, a: count): count
     { return cursor+(a-cursor%a)%a; }
 
+global first_frame_reported = F;
+
 function deliver(rt: Radiotap, data: string)
     {
     if ( |data| < 10 ) return;
+    # One-time diagnostic: proves frames reach the wireless modules on this sensor.
+    if ( ! first_frame_reported )
+        {
+        first_frame_reported=T;
+        Reporter::info(fmt("drone-detector: first wireless frame received (%s)",rt$source));
+        }
     local fc=byte(data,0);
     if ( fc%4 != 0 ) return;                                           # protocol version 0
     # Control frames (type 1) mostly lack addr2; everything else has it at 10.
@@ -145,4 +153,7 @@ event raw_packet(p: raw_pkt_hdr) &group="drone-wireless"
     }
 
 event zeek_init()
-    { if ( ! enabled ) disable_event_group("drone-wireless"); }
+    {
+    if ( ! enabled ) { disable_event_group("drone-wireless"); return; }
+    Reporter::info(fmt("drone-detector: wireless input enabled (GRE decoys %s)",gre_decoys));
+    }
