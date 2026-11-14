@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.15.1
+
+- Docs and package description: ARP and Wi-Fi are enabled by default, not optional (no extra load line; Wi-Fi off switch `redef DroneRadio::enabled = F;`).
+
 ## v0.15.0
 
 - Load `arp.zeek` by default (cheap `arp_reply` handling; still needs ARP and the drone flow on one worker).

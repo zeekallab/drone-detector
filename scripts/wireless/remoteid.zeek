@@ -1,4 +1,4 @@
-# Wireless profile only: ASTM F3411 / ASD-STAN Open Drone ID (Remote ID) over
+# Loaded by default (off switch: redef DroneRadio::enabled = F;). ASTM F3411 / ASD-STAN Open Drone ID (Remote ID) over
 # Wi-Fi Beacon (vendor IE, OUI FA:0B:BC type 0x0D) and Wi-Fi NAN (public action
 # service discovery frames). Field layouts follow opendroneid-core-c; validate
 # against a real broadcaster before relying on decoded positions.

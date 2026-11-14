@@ -1,5 +1,5 @@
-# Part of the wireless profile (wireless/__load__.zeek). Needs 802.11 frames from a
-# radiotap capture or GRE 0x8200 forwarding; do not load on an ordinary wired sensor.
+# Loaded by default. Deauthentication bursts and EAPOL context from 802.11 frames
+# (radiotap capture or GRE 0x8200 forwarding). Off switch: redef DroneRadio::enabled = F;
 @load ./__load__
 @load ./wireless/radiotap
 

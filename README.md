@@ -46,8 +46,8 @@ field. MAVLink telemetry and existing detections are unchanged.
 | Video | Corroborated Tello SDK H.264 stream presence |
 | Control alerts | Older/rapid replay-like controls, malformed controls, repetitive opposing maneuvers, and source-port churn |
 | MAVLink alerts | Position discontinuity, altitude discontinuity, and multiple control system IDs |
-| ARP alert | ARP interception patterns on a drone flow (loaded by default) |
-| Wireless input | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication bursts |
+| ARP (enabled by default) | ARP interception patterns on a drone flow |
+| Wi-Fi (enabled by default) | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication bursts |
 
 Alerts are investigation signals, not proof of malicious intent or successful
 commands. [Definitions and limits](EXTENDED_README.md#alert-reference).
@@ -93,7 +93,7 @@ compatibility/performance has not been validated. [Installation details](EXTENDE
 **ARP** loads by default. It only handles `arp_reply` events, so it is cheap. It
 fires only when one IPv4 broadcast domain's ARP and the drone traffic reach the
 same worker; avoid merged networks with overlapping addresses.
-[Requirements and tuning](EXTENDED_README.md#enabling-optional-arp-and-wi-fi-alerts).
+[Requirements and tuning](EXTENDED_README.md#arp-and-wi-fi-alerts-enabled-by-default).
 
 **Wireless input** is part of the default package. It reads 802.11 frames from
 either source, with no extra load line:

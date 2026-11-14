@@ -1,4 +1,5 @@
-# Wireless profile only: inventory of drone-like 802.11 transmitters.
+# Loaded by default (off switch: redef DroneRadio::enabled = F;). Inventory of
+# drone-like 802.11 transmitters.
 # Matches access points by SSID pattern or vendor OUI (beacons and probe
 # responses) and drone-vendor stations by their probe requests, then tracks
 # channel, signal, associated stations and data volume, encrypted or not.

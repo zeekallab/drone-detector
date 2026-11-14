@@ -13,14 +13,14 @@ new name. `event_type`, `evidence`, and `protocol` retain their names.
 
 A flight change alone does not create an immediate record. SDK commands share
 one host-pair summary while contributing connections remain active; its final
-record is emitted when the last contributing connection closes. Optional Wi-Fi
+record is emitted when the last contributing connection closes. Wi-Fi
 uses BSSID scope and flushes on inactivity or shutdown. The scopes are local to
 each worker; cluster video identity sharing does not aggregate attack state.
 A rare connection confirmed by multiple protocol parsers has separate protocol
 records. Final timestamps represent flush time, not flight time; `video_active`
 in a final record means video was observed during the summarized activity.
 
-Optional ARP evidence is checked on the next eligible drone packet and on close;
+ARP evidence is checked on the next eligible drone packet and on close;
 ARP packets alone do not initiate a drone row. Capture visibility, thresholds,
 and timing still determine whether a finding qualifies. Accelerating replay
 can change which thresholds are met. These indicators do not prove takeover.
@@ -116,33 +116,32 @@ and rate-limit behavior is retained. MAVLink output is unchanged.
   as readable descriptions in `manipulation_detection`, alongside the existing detections.
 - **Simpler output:** removes the separate `anomaly_indicators` field. Update
   searches that used it to search `manipulation_detection`; thresholds and minute limits are unchanged.
-- **Optional alerts:** see the enablement instructions below for ARP interception
-  and wireless deauthentication. Both remain opt-in.
+- **ARP and Wi-Fi enabled by default:** ARP interception and the Wi-Fi modules
+  (drone AP inventory, Remote ID, deauthentication bursts) load with the package.
 
-## Enabling optional ARP and Wi-Fi alerts
+## ARP and Wi-Fi alerts (enabled by default)
 
-Add the appropriate line to your local Zeek policy or custom bundle entry script,
-using the actual installed package path. Each module also loads the main detector:
+Both load with the package; no extra `@load` line is needed. Both write detections
+into `manipulation_detection` in `drone.log`.
+
+**ARP** fires only when one IPv4 broadcast domain's ARP and the drone flow reach
+the same worker. Routed feeds may omit ARP; do not combine overlapping networks.
+Legitimate proxy ARP can resemble interception. [Details and exclusions](#arp-interception-pattern).
+
+**Wi-Fi** reads 802.11 frames from a monitor-mode (radiotap) capture interface, or
+from raw 802.11 forwarded inside GRE protocol 0x8200 to `DroneRadio::gre_decoys`
+(default `10.254.200.1`), with an optional GRE key carrying channel and signal. It
+logs a drone access-point inventory (`protocol: 802.11`), Remote ID broadcasts
+(`protocol: remote-id`) and deauthentication bursts. An ordinary Ethernet mirror
+has no 802.11 frames, so it simply logs nothing. The input uses `raw_packet`, which
+runs per packet; turn it off on sensors that never see wireless frames:
 
 ```zeek
-# ARP interception: only for one IPv4 broadcast domain visible on the same worker.
-@load /path/to/drone-detector/scripts/arp.zeek
-
-# Wi-Fi deauthentication: only for raw radiotap/802.11 management-frame input.
-@load /path/to/drone-detector/scripts/wifi.zeek
+redef DroneRadio::enabled = F;
 ```
 
-Enable only the module(s) whose capture requirements your deployment meets, then
-reload/redeploy the policy through your normal Zeek or Corelight bundle workflow.
-Remove the corresponding line to disable it. Both write detections into `manipulation_detection`
-in `drone.log`.
-
-**ARP:** routed feeds may omit ARP; do not combine overlapping networks. Legitimate
-proxy ARP can resemble interception. [Details and exclusions](#arp-interception-pattern-optional).
-**Wi-Fi:** an ordinary Ethernet mirror lacks the required management frames.
-This is our custom `wifi.zeek`, not a built-in Zeek script; raw-packet processing
-adds overhead. Live Corelight compatibility/performance for these optional modules
-is unvalidated. [Details and capture testing](#wireless-deauthentication-burst-optional).
+Live Corelight compatibility/performance for the Wi-Fi input is unvalidated.
+[Details and capture testing](#wireless-deauthentication-burst).
 
 ## Earlier updates — v0.10.0
 
@@ -209,8 +208,8 @@ control pattern, not proof of a forged sender or takeover.
 - **Capture validation:** reviewed all 12 UVic MITM captures; 11 meet the rule,
   with one one-sided case explicitly outside coverage. Three normal flights
   produce no alerts. See [MITM findings](docs/mitm-review.md).
-- **Explicit opt-in:** load `scripts/arp.zeek` only when one local IPv4 broadcast
-  domain's ARP and drone traffic reach the same worker. See requirements below.
+- **Explicit opt-in** at the time (enabled by default since v0.15.0): needs one local
+  IPv4 broadcast domain's ARP and drone traffic on the same worker. See requirements below.
 
 ## Earlier updates — v0.5.0
 
@@ -218,8 +217,8 @@ control pattern, not proof of a forged sender or takeover.
   in the existing minute-limited `drone.log`.
 - **Binary Tello identification:** validate declared length, header CRC8 and frame
   CRC16 before evaluating joystick replay/integrity patterns.
-- **Optional wireless alert:** deauthentication bursts and EAPOL context from raw
-  radiotap captures; not a claim of successful password cracking.
+- **Wireless alert** (opt-in at the time; enabled by default since v0.15.0): deauthentication
+  bursts and EAPOL context from 802.11 frames; not a claim of successful password cracking.
 - **Documented alert definitions:** see the [alert reference](#alert-reference)
   for descriptions, thresholds, examples and input requirements.
 
@@ -424,17 +423,18 @@ cumulative. `binary_tracking_limited` warns that bounded fingerprint tracking
 omitted information. CRC validation does not authenticate a sender. The parser
 identifies binary traffic but does not yet decode its flight-state measurements.
 
-### Wireless deauthentication burst (optional)
+### Wireless deauthentication burst
 
 **Description:** Repeated unprotected, non-retry Wi-Fi disconnect frames affect
 a network whose observed beacon SSID matches `TELLO-` plus six hexadecimal digits.
 This can indicate wireless disruption or an attempt to provoke WPA handshakes.
 
-This alert requires **explicitly loading `scripts/wifi.zeek`** and raw radiotap
-802.11 capture input. It is not loaded by the default package and cannot work
-from an ordinary Ethernet/IP mirror lacking wireless management frames. The raw
-packet handler has higher processing cost; live Corelight support/performance
-has not been validated. It is tested offline on Zeek 9.0.1.
+This alert is **loaded by default**. It needs 802.11 frames: a radiotap capture
+interface, or raw 802.11 in GRE 0x8200 sent to `DroneRadio::gre_decoys`. An
+ordinary Ethernet/IP mirror has no wireless management frames, so it logs
+nothing there. The raw packet handler has higher processing cost (turn it off
+with `redef DroneRadio::enabled = F;`); live Corelight support/performance has
+not been validated. The radiotap path was tested offline on Zeek 9.0.1.
 
 The default is 20 distinct deauthentication frames within a 10-second bucket,
 after observing a matching beacon. Retry-marked frames, duplicate management-frame
@@ -451,8 +451,8 @@ The rate limit is once per minute per BSSID. Tracking is bounded; a sticky
 `wireless_tracking_limited` flag means counts may be incomplete.
 
 ```sh
-# Explicit opt-in, from a separate output directory:
-zeek -r /path/to/radiotap-capture.pcap /path/to/drone-detector/scripts/wifi.zeek LogAscii::use_json=T
+# From a separate output directory (the package loads the Wi-Fi modules):
+zeek -r /path/to/radiotap-capture.pcap /path/to/drone-detector/scripts LogAscii::use_json=T
 ```
 
 ### Control source-port churn
@@ -572,14 +572,14 @@ single dangerous commands, `rc` streaming, and other unsupported command forms
 are outside this rule. Recent telemetry identifies a peer pair, not a trusted or
 authenticated controller. [Review and validation](docs/injection-review.md).
 
-### ARP interception pattern (optional)
+### ARP interception pattern
 
 **Description:** One MAC repeatedly claims both endpoints of an already-confirmed
 IPv4 drone flow. This is consistent with ARP poisoning used for interception;
 legitimate proxy ARP can produce the same pattern. It does not prove unauthorized
 access, modified commands, or a successful takeover.
 
-Load `scripts/arp.zeek` explicitly. For endpoints A and B, the same unicast MAC
+Loaded by default. For endpoints A and B, the same unicast MAC
 must advertise A to B and B to A through ARP replies. Each direction requires
 three sampled replies within the last 60 seconds, spanning at least two seconds.
 The module retains at most one sample per second per claim and requires the
@@ -597,12 +597,12 @@ This appends evidence to drone records. A new ARP finding may prompt a row on
 the next validated drone packet; ARP alone does not cause a new row.
 
 ```sh
-# Explicit opt-in, from a separate output directory:
-zeek -r /path/to/single-lan-capture.pcap /path/to/drone-detector/scripts/arp.zeek LogAscii::use_json=T
+# From a separate output directory (the package loads arp.zeek):
+zeek -r /path/to/single-lan-capture.pcap /path/to/drone-detector/scripts LogAscii::use_json=T
 ```
 
 ```zeek
-# After loading arp.zeek; use the real MAC of a known legitimate proxy:
+# Use the real MAC of a known legitimate proxy:
 redef DroneARP::ignored_macs += { "02:00:00:00:00:01" };
 redef DroneARP::minimum_claims = 3;
 redef DroneARP::evidence_window = 60secs;
@@ -633,7 +633,7 @@ redef DroneTelloBinary::replay_min_distinct = 5;
 redef DroneTelloBinary::replay_min_fraction = 0.5;
 redef DroneTelloBinary::malformed_min_frames = 3;
 redef DroneTelloBinary::max_fingerprints = 2048;
-# After explicitly loading wifi.zeek:
+# Wi-Fi deauthentication tuning:
 redef DroneWiFi::minimum_deauth_frames = 20;
 redef DroneWiFi::burst_interval = 10secs;
 ```

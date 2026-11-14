@@ -1,4 +1,4 @@
-# Wireless profile only: shared 802.11 frame input for the wireless modules.
+# Loaded by default: shared 802.11 frame input for the wireless modules.
 #
 # Two inputs, both raising DroneRadio::frame:
 #   1. A monitor-mode (radiotap) capture interface, e.g. Zeek on the capture box.
