@@ -1,6 +1,6 @@
 [package]
 description = Drone protocol evidence in drone.log: legacy DJI, MAVLink 1/2, Tello SDK/binary/video, ARP, and Wi-Fi (radiotap or GRE 0x8200: drone AP inventory, Remote ID, deauth bursts), all enabled by default
-version = 0.15.1
+version = 0.15.2
 script_dir = scripts
 depends = zeek >=9.0.0
 test_command = python3 tests/run_tests.py

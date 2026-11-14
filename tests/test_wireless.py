@@ -85,6 +85,12 @@ def main():
     assert last['wireless_downlink_frames']==50 and last['wireless_stations']==['5e:9d:58:26:67:48'],ap
     assert last['wireless_signal_dbm_min']==-45 and last['wireless_signal_dbm_max']==-40,ap
     cases+=1
+    # Sustained downlink flags a possible video stream within the minute.
+    rows,_=run(capture(frames),WIRELESS+'redef DroneInventory::video_bytes_per_minute = 30000;\n',live=True)
+    ap=by(rows,'802.11')
+    assert ap[-1]['wireless_video_suspected'] is True and ap[-1]['evidence'].endswith('+sustained-downlink'),ap
+    assert ap[0]['wireless_video_suspected'] is False,ap
+    cases+=1
     # Ordinary network from a non-drone OUI is ignored.
     rows,_=run(capture([beacon(b'home-wifi',src=OTHER)]+[downlink(i) for i in range(20)]),WIRELESS,live=True)
     assert not by(rows,'802.11'),rows;cases+=1

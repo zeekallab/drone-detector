@@ -182,13 +182,12 @@ event DroneRadio::frame(rt: DroneRadio::Radiotap, data: string)
     if ( station != "" && station != bssid && station !in ap$stations && |ap$stations| < max_stations
          && station != "ff:ff:ff:ff:ff:ff" ) add ap$stations[station];
     if ( network_time()-ap$window_start >= 60secs )
-        {
-        if ( ap$window_down >= video_bytes_per_minute && ! ap$video )
-            { ap$video=T; ap$evidence+="+sustained-downlink"; }
-        ap$window_start=network_time(); ap$window_down=0;
-        }
+        { ap$window_start=network_time(); ap$window_down=0; }
     if ( ds == 2 ) { ++ap$down_frames; ap$down_bytes+=|data|; ap$window_down+=|data|; observe_signal(ap,rt); }
     else { ++ap$up_frames; ap$up_bytes+=|data|; }
+    # Flag as soon as one minute's downlink crosses the threshold.
+    if ( ! ap$video && ap$window_down >= video_bytes_per_minute )
+        { ap$video=T; ap$evidence+="+sustained-downlink"; }
     ap$logging$dirty=T;
     emitters[bssid]=ap; # refresh &write_expire
     emit(bssid,ap,F);

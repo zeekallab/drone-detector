@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.15.2
+
+- Flag `wireless_video_suspected` as soon as a minute's downlink crosses `video_bytes_per_minute`, not only on the first data frame after the window closes (missed on the AP200 GRE test: 4.3 MB/min stayed false).
+
 ## v0.15.1
 
 - Docs and package description: ARP and Wi-Fi are enabled by default, not optional (no extra load line; Wi-Fi off switch `redef DroneRadio::enabled = F;`).
