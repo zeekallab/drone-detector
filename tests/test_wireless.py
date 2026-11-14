@@ -46,6 +46,28 @@ def rid_nan():
     body=bytes.fromhex('0409506f9a13')+bytes([3])+struct.pack('<H',len(sda))+sda
     return radio()+struct.pack('<HH',0xd0,0)+BCAST+OTHER+BCAST+b'\0\0'+body
 
+def ip_checksum(h):
+    s=sum(struct.unpack('!10H',h));s=(s>>16)+(s&0xffff);s+=s>>16
+    return (~s)&0xffff
+
+def gre(frame,key=None,dst='10.254.200.1'):
+    # What the Pi forwarder sends: Ethernet / IPv4 / GRE 0x8200 / raw 802.11.
+    g=struct.pack('!HH',0x2000 if key is not None else 0,0x8200)+(struct.pack('!I',key) if key is not None else b'')+frame
+    d=bytes(int(x) for x in dst.split('.'))
+    ip=struct.pack('!BBHHHBBH4s4s',0x45,0,20+len(g),1,0x4000,64,47,0,bytes([192,168,249,13]),d)
+    ip=ip[:10]+struct.pack('!H',ip_checksum(ip))+ip[12:]
+    return b'\x02\0\0\0\0\x01'+bytes.fromhex('dca632d54f7f')+b'\x08\x00'+ip+g
+
+def key(mhz,dbm):
+    return (mhz<<16)|(dbm&0xffff)
+
+def eth_capture(packets):
+    data=struct.pack('<IHHIIII',0xa1b2c3d4,2,4,0,0,65535,1)
+    for i,p in enumerate(packets):
+        t=i*.01
+        data+=struct.pack('<IIII',1700000000+int(t),round((t-int(t))*1e6),len(p),len(p))+p
+    return data
+
 def by(rows,protocol):
     return [r for r in rows if r['protocol']==protocol]
 
@@ -87,6 +109,30 @@ def main():
     bad=bytes.fromhex('fa0bbc0e')+b'\x07'+pack(basic_id())
     rows,_=run(capture([beacon(b'x',src=OTHER,ies=bytes([221,len(bad)])+bad)]),WIRELESS,live=True)
     assert not by(rows,'remote-id'),rows;cases+=1
+    # GRE 0x8200 input (Pi forwarder to the sensor decoy): radiotap stripped.
+    strip=lambda f:f[15:]
+    rows,_=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')),key(2437,-52))]+[gre(strip(downlink(i))) for i in range(10)]),WIRELESS,live=True)
+    ap=by(rows,'802.11')
+    assert ap and ap[0]['wireless_channel_mhz']==2437 and ap[0]['wireless_signal_dbm_last']==-52,rows
+    assert ap[-1]['wireless_downlink_frames']==10 and 'wireless_signal_dbm_min' in ap[-1],ap
+    cases+=1
+    # Without the key there is no channel or signal, but detection still works.
+    rows,_=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')))]),WIRELESS,live=True)
+    ap=by(rows,'802.11')
+    assert ap and 'wireless_channel_mhz' not in ap[0] and 'wireless_signal_dbm_last' not in ap[0],rows
+    cases+=1
+    rows,_=run(eth_capture([gre(strip(rid_beacon()))]),WIRELESS,live=True)
+    assert by(rows,'remote-id') and by(rows,'remote-id')[-1]['remoteid_ua_id']=='1581F5FKD229400000AA',rows
+    cases+=1
+    # Deauthentication burst over GRE, from the existing wifi.zeek logic.
+    from test_wifi import beacon as tello_beacon, deauth
+    rows,_=run(eth_capture([gre(tello_beacon()[8:])]+[gre(deauth(i)[8:]) for i in range(25)]),WIRELESS,live=True)
+    assert any(r.get('wireless_deauth_frames')==20 for r in rows),rows
+    cases+=1
+    # GRE to an address that is not a configured decoy is ignored.
+    rows,_=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')),dst='10.9.9.9'),gre(strip(rid_beacon()),dst='10.9.9.9')]),WIRELESS,live=True)
+    assert not by(rows,'802.11') and not by(rows,'remote-id'),rows
+    cases+=1
     # The default (wired) package never parses radiotap.
     rows,_=run(capture([beacon(b'TELLO-58ECCC'),rid_beacon()]),live=True)
     assert not rows,rows;cases+=1

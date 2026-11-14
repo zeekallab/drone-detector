@@ -1,5 +1,7 @@
-# OPT-IN ONLY: raw 802.11/radiotap capture input. Do not load on a normal wired sensor.
+# Part of the wireless profile (wireless/__load__.zeek). Needs 802.11 frames from a
+# radiotap capture or GRE 0x8200 forwarding; do not load on an ordinary wired sensor.
 @load ./__load__
+@load ./wireless/radiotap
 
 module DroneWiFi;
 
@@ -61,29 +63,10 @@ function emit(bssid: string, n: Network, final: bool)
     n$burst=0; n$bucket_start=network_time();
     }
 
-event raw_packet(p: raw_pkt_hdr)
+# Frames come from the shared wireless input: radiotap capture or GRE 0x8200.
+event DroneRadio::frame(rt: DroneRadio::Radiotap, data: string)
     {
-    if ( p$l2$encap == LINK_ETHERNET ) return;
-    local raw=get_current_packet()$data;
-    # Explicitly support radiotap only: version/pad, little-endian header size.
-    if ( |raw| < 8 || raw[0:2] != "\x00\x00" ) return;
-    local offset=le16(raw,2);
-    if ( offset < 8 || offset > 4096 || |raw| < offset+24 ) return;
-    local present=bytestring_to_count(raw[4:8],T);
-    local bitmap=present; local cursor: count=8; local words: count=1;
-    while ( bitmap >= 2147483648 )
-        {
-        if ( cursor+4 > offset || words >= 8 ) return;
-        bitmap=bytestring_to_count(raw[cursor:cursor+4],T); cursor+=4; ++words;
-        }
-    if ( present%2 == 1 ) { cursor += (8-cursor%8)%8; cursor+=8; }
-    if ( (present/2)%2 == 1 )
-        {
-        if ( cursor >= offset ) return;
-        # Radiotap reports bad FCS: do not count corrupt wireless frames.
-        if ( (byte(raw,cursor)/64)%2 == 1 ) return;
-        }
-    local data=raw[offset:];
+    if ( |data| < 24 ) return;
     local fc=byte(data,0); local flags=byte(data,1);
     if ( fc%4 != 0 ) return;
     local kind=(fc/4)%4;
