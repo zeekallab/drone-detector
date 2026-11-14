@@ -47,7 +47,7 @@ field. MAVLink telemetry and existing detections are unchanged.
 | Control alerts | Older/rapid replay-like controls, malformed controls, repetitive opposing maneuvers, and source-port churn |
 | MAVLink alerts | Position discontinuity, altitude discontinuity, and multiple control system IDs |
 | ARP alert | ARP interception patterns on a drone flow (loaded by default) |
-| Wireless profile | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication bursts |
+| Wireless input | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication bursts |
 
 Alerts are investigation signals, not proof of malicious intent or successful
 commands. [Definitions and limits](EXTENDED_README.md#alert-reference).
@@ -88,22 +88,30 @@ For Corelight, rebuild your custom bundle from the updated package using your
 normal package workflow. Check the sensor's embedded Zeek version; live sensor
 compatibility/performance has not been validated. [Installation details](EXTENDED_README.md#installation).
 
-## ARP alert and the wireless profile
+## ARP alert and wireless input
 
 **ARP** loads by default. It only handles `arp_reply` events, so it is cheap. It
 fires only when one IPv4 broadcast domain's ARP and the drone traffic reach the
 same worker; avoid merged networks with overlapping addresses.
 [Requirements and tuning](EXTENDED_README.md#enabling-optional-arp-and-wi-fi-alerts).
 
-**Wireless profile** is for a monitor-mode capture point, such as a Raspberry Pi
-running Zeek on a Wi-Fi interface in monitor mode. Load it there instead of the
-default package:
+**Wireless input** is part of the default package. It reads 802.11 frames from
+either source, with no extra load line:
+
+- a monitor-mode (radiotap) capture interface, if Zeek runs on the capture box;
+- raw 802.11 forwarded inside **GRE protocol 0x8200** to a decoy address
+  (`DroneRadio::gre_decoys`, default `10.254.200.1`) and mirrored into the sensor.
+  An optional GRE key carries channel MHz (high 16 bits) and signal dBm (low 16
+  bits, two's complement).
+
+Sensors that never see wireless frames can turn it off, which disables its
+per-packet `raw_packet` handler:
 
 ```zeek
-@load packages/drone-detector/wireless
+redef DroneRadio::enabled = F;
 ```
 
-It adds three things on top of the full wired package:
+It adds:
 
 - **Drone access-point inventory** (`protocol: 802.11`): beacons and probe
   responses whose SSID matches `DroneInventory::drone_ssids` or whose OUI is in
@@ -125,8 +133,8 @@ detectors work on monitor captures too.
 Limits: a Wi-Fi card only sees Wi-Fi. DJI OcuSync/O3/O4 links are not Wi-Fi and
 need an SDR. Remote ID sent only over Bluetooth LE is not visible. One radio
 sees one channel at a time, so use channel hopping or one radio per band.
-**Never load the wireless profile on a wired sensor:** it uses `raw_packet`,
-which runs for every packet. The Remote ID and inventory decoders are new and
+The wireless input uses `raw_packet`, which runs for every packet; on busy
+wired sensors with no wireless feed, set `DroneRadio::enabled = F`. The Remote ID and inventory decoders are new and
 have not yet been validated against live broadcasters.
 
 ## Documentation and credits

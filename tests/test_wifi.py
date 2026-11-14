@@ -38,7 +38,8 @@ def main():
                [beacon()]+[deauth(1)]*40,
                [beacon()]+[eapol(i) for i in range(40)]):
         rows,_=run(capture(fs),settings,live=True);assert not rows,rows;cases+=1
-    rows,_=run(capture(frames),live=True);assert not rows,rows;cases+=1
+    # Loaded by default; the DroneRadio::enabled switch turns wireless input off.
+    rows,_=run(capture(frames),'redef DroneRadio::enabled = F;\n',live=True);assert not rows,rows;cases+=1
     rows,_=run(capture([beacon()]+[deauth(i) for i in range(40)],times=[0]+list(range(1,41))),settings,live=True)
     assert not rows,rows;cases+=1
     # Bad-FCS flag in radiotap is not usable attack evidence.

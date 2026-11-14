@@ -5,7 +5,7 @@
 #   2. Raw 802.11 forwarded inside GRE protocol 0x8200 (Aruba format) to a decoy
 #      address and mirrored to the sensor. An optional GRE key carries channel
 #      MHz (high 16 bits) and signal dBm (low 16 bits, two's complement).
-# Uses raw_packet, which runs per packet: load only where wireless frames arrive.
+# Uses raw_packet, which runs per packet. Disable with redef DroneRadio::enabled = F.
 module DroneRadio;
 
 export {
@@ -21,6 +21,9 @@ export {
     ## a trailing FCS, when radiotap reports one, is already removed.
     global frame: event(rt: Radiotap, data: string);
 
+    ## Wireless input on/off. Loaded by default; set F on sensors that never see
+    ## wireless frames, which disables the per-packet raw_packet handler.
+    const enabled = T &redef;
     ## Accept GRE 0x8200 frames sent to these decoy addresses.
     const gre_decoys: set[addr] = { 10.254.200.1 } &redef;
 
@@ -133,10 +136,13 @@ function from_gre(raw: string)
     deliver(rt,raw[h:limit]);
     }
 
-event raw_packet(p: raw_pkt_hdr)
+event raw_packet(p: raw_pkt_hdr) &group="drone-wireless"
     {
     if ( p$l2$encap != LINK_ETHERNET ) { from_radiotap(get_current_packet()$data); return; }
     # Cheap filter first: only GRE to a configured decoy.
     if ( ! p?$ip || p$ip$p != 47 || p$ip$dst !in gre_decoys ) return;
     from_gre(get_current_packet()$data);
     }
+
+event zeek_init()
+    { if ( ! enabled ) disable_event_group("drone-wireless"); }

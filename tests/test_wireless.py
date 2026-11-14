@@ -133,8 +133,11 @@ def main():
     rows,_=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')),dst='10.9.9.9'),gre(strip(rid_beacon()),dst='10.9.9.9')]),WIRELESS,live=True)
     assert not by(rows,'802.11') and not by(rows,'remote-id'),rows
     cases+=1
-    # The default (wired) package never parses radiotap.
+    # The default package includes wireless input, with no extra load line.
     rows,_=run(capture([beacon(b'TELLO-58ECCC'),rid_beacon()]),live=True)
+    assert by(rows,'802.11') and by(rows,'remote-id'),rows;cases+=1
+    # The off switch disables it.
+    rows,_=run(capture([beacon(b'TELLO-58ECCC'),rid_beacon()]),'redef DroneRadio::enabled = F;\n',live=True)
     assert not rows,rows;cases+=1
     print(f'PASS: {cases} wireless-profile scenarios (drone AP inventory, Remote ID beacon/NAN, negatives).')
 

@@ -3,8 +3,8 @@
 ## v0.15.0
 
 - Load `arp.zeek` by default (cheap `arp_reply` handling; still needs ARP and the drone flow on one worker).
-- Add the `wireless` profile (`@load packages/drone-detector/wireless`) for monitor-mode capture points:
-  - shared radiotap parser (`wireless/radiotap.zeek`) with channel and signal strength;
+- Add wireless input to the default package (off switch: `redef DroneRadio::enabled = F;`), reading radiotap capture interfaces or raw 802.11 in GRE 0x8200 sent to `DroneRadio::gre_decoys` (optional GRE key = channel/signal):
+  - shared input (`wireless/radiotap.zeek`) with channel and signal strength; `wifi.zeek` deauth detection now uses it;
   - drone access-point/station inventory by SSID pattern and vendor OUI, with data volume and a video-stream heuristic;
   - Remote ID (ASTM F3411) decoding over Wi-Fi beacon and NAN.
 - Not yet validated against a live Zeek run or real Remote ID broadcasters.
