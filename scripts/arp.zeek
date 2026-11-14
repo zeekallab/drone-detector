@@ -1,5 +1,5 @@
-# Opt-in: requires ARP and drone traffic from ONE IPv4 broadcast domain on the same worker.
-@load ./__load__
+# Loaded by default. Requires ARP and drone traffic from ONE IPv4 broadcast domain on the same worker.
+@load ./main
 
 module DroneARP;
 

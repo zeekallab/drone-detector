@@ -34,7 +34,7 @@ def check(packets,expected,settings='',telemetry=True,enabled=True):
 def main():
     both=[arp(t,src=s,dst=d) for t in [10,12,14,40,42,44] for s,d in [(A,B),(B,A)]]
     check(both,True)
-    check(both,False,enabled=False)
+    check(both,True,enabled=False) # loaded by default since the wireless-profile change
     check(both,False,telemetry=False)
     check([arp(t) for t in range(10,60,2)],False) # one-sided
     check([arp(t,src=s,dst=d,mac=M if s==A else '60601f58eccc') for t in [40,42,44] for s,d in [(A,B),(B,A)]],False)

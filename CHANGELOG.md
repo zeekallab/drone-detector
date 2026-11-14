@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.15.0
+
+- Load `arp.zeek` by default (cheap `arp_reply` handling; still needs ARP and the drone flow on one worker).
+- Add the `wireless` profile (`@load packages/drone-detector/wireless`) for monitor-mode capture points:
+  - shared radiotap parser (`wireless/radiotap.zeek`) with channel and signal strength;
+  - drone access-point/station inventory by SSID pattern and vendor OUI, with data volume and a video-stream heuristic;
+  - Remote ID (ASTM F3411) decoding over Wi-Fi beacon and NAN.
+- Not yet validated against a live Zeek run or real Remote ID broadcasters.
+
 ## v0.14.0
 
 - Rename `alert` to `manipulation_detection`; preserve `event_type`, `evidence`, and `protocol`.

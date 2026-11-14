@@ -46,7 +46,8 @@ field. MAVLink telemetry and existing detections are unchanged.
 | Video | Corroborated Tello SDK H.264 stream presence |
 | Control alerts | Older/rapid replay-like controls, malformed controls, repetitive opposing maneuvers, and source-port churn |
 | MAVLink alerts | Position discontinuity, altitude discontinuity, and multiple control system IDs |
-| Optional alerts | ARP interception patterns and wireless deauthentication bursts |
+| ARP alert | ARP interception patterns on a drone flow (loaded by default) |
+| Wireless profile | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication bursts |
 
 Alerts are investigation signals, not proof of malicious intent or successful
 commands. [Definitions and limits](EXTENDED_README.md#alert-reference).
@@ -87,23 +88,46 @@ For Corelight, rebuild your custom bundle from the updated package using your
 normal package workflow. Check the sensor's embedded Zeek version; live sensor
 compatibility/performance has not been validated. [Installation details](EXTENDED_README.md#installation).
 
-## Enable optional ARP or Wi-Fi alerts
+## ARP alert and the wireless profile
 
-Add the appropriate line to your local policy or bundle entry script, replacing
-the path with your installation location, then reload/redeploy the policy:
+**ARP** loads by default. It only handles `arp_reply` events, so it is cheap. It
+fires only when one IPv4 broadcast domain's ARP and the drone traffic reach the
+same worker; avoid merged networks with overlapping addresses.
+[Requirements and tuning](EXTENDED_README.md#enabling-optional-arp-and-wi-fi-alerts).
+
+**Wireless profile** is for a monitor-mode capture point, such as a Raspberry Pi
+running Zeek on a Wi-Fi interface in monitor mode. Load it there instead of the
+default package:
 
 ```zeek
-@load /path/to/drone-detector/scripts/arp.zeek
-# Or, for raw wireless captures:
-@load /path/to/drone-detector/scripts/wifi.zeek
+@load packages/drone-detector/wireless
 ```
 
-**ARP** requires one IPv4 broadcast domain's ARP and drone traffic on the same
-worker; avoid merged networks with overlapping addresses. **Wi-Fi** requires raw
-radiotap/802.11 management frames, which ordinary Ethernet mirrors do not provide.
-Our custom Wi-Fi module adds raw-packet processing overhead. Both are opt-in and
-not live-validated on Corelight. Remove the load line to disable a module.
-[Requirements and tuning](EXTENDED_README.md#enabling-optional-arp-and-wi-fi-alerts).
+It adds three things on top of the full wired package:
+
+- **Drone access-point inventory** (`protocol: 802.11`): beacons and probe
+  responses whose SSID matches `DroneInventory::drone_ssids` or whose OUI is in
+  `DroneInventory::drone_ouis`, plus drone-vendor stations sending probe
+  requests. Each entry tracks channel, signal strength (min/max/last), whether
+  the network is encrypted, associated stations, and uplink/downlink frame and
+  byte counts. `wireless_video_suspected` flags sustained downlink volume
+  consistent with a live video stream, even when the network is encrypted.
+- **Remote ID** (`protocol: remote-id`): Open Drone ID messages over Wi-Fi beacon
+  (vendor IE `FA:0B:BC` type `0x0D`) and Wi-Fi NAN. Logs the UAS ID, drone
+  position, altitude, height, speed, heading, status, operator location,
+  operator ID and self-description.
+- **Deauthentication bursts** on Tello-named networks (the existing `wifi.zeek`).
+
+Zeek's built-in 802.11 analyzer also turns unencrypted data frames, for example
+Tello's default open network, into IP, so the Tello SDK, binary and video
+detectors work on monitor captures too.
+
+Limits: a Wi-Fi card only sees Wi-Fi. DJI OcuSync/O3/O4 links are not Wi-Fi and
+need an SDR. Remote ID sent only over Bluetooth LE is not visible. One radio
+sees one channel at a time, so use channel hopping or one radio per band.
+**Never load the wireless profile on a wired sensor:** it uses `raw_packet`,
+which runs for every packet. The Remote ID and inventory decoders are new and
+have not yet been validated against live broadcasters.
 
 ## Documentation and credits
 
