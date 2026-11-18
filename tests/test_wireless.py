@@ -2,7 +2,12 @@
 """Wireless profile: drone AP inventory and Remote ID (beacon + NAN), with negatives."""
 import hashlib
 import struct
-from test_detector import run
+from test_detector import run as _run
+
+
+def run(data, settings='', live=False):
+    # Inventory totals arrive in update/final records: use production logging defaults.
+    return _run(data, settings, live=live, lifecycle=True)
 from test_wifi import capture
 
 AP=bytes.fromhex('60601f58eccc');STA=bytes.fromhex('5e9d58266748')
@@ -130,7 +135,7 @@ def main():
     rows,_=run(eth_capture([gre(strip(rid_beacon()))]),WIRELESS,live=True)
     assert by(rows,'remote-id') and by(rows,'remote-id')[-1]['remoteid_ua_id']=='1581F5FKD229400000AA',rows
     cases+=1
-    # Deauthentication burst over GRE, from the existing wifi.zeek logic.
+    # Deauthentication burst over GRE against a tracked drone AP (inventory).
     from test_wifi import beacon as tello_beacon, deauth
     rows,_=run(eth_capture([gre(tello_beacon()[8:])]+[gre(deauth(i)[8:]) for i in range(25)]),WIRELESS,live=True)
     assert any(r.get('wireless_deauth_frames')==20 for r in rows),rows

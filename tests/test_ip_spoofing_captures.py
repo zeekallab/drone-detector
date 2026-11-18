@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from test_detector import unexpected_reporter
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = Path(os.environ.get(
@@ -27,7 +28,7 @@ def main():
                  str(ROOT / 'scripts'), 'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],
                 cwd=tmp, capture_output=True, text=True)
             assert result.returncode == 0, (p.name, result.stderr)
-            assert not (Path(tmp) / 'reporter.log').exists(), p.name
+            assert not unexpected_reporter(Path(tmp) / 'reporter.log'), p.name
             log = Path(tmp) / 'drone.log'
             rows = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             binary = [row for row in rows if row['protocol'] == 'tello-binary']

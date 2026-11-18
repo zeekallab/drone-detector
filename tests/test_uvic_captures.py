@@ -2,6 +2,7 @@
 """Real Tello SDK positive and unsupported binary-protocol negative regressions."""
 import hashlib,json,os,subprocess,tempfile
 from pathlib import Path
+from test_detector import unexpected_reporter
 ROOT=Path(__file__).resolve().parents[1]
 FIXTURES=ROOT/'tests/fixtures/uvic'
 
@@ -18,7 +19,7 @@ def main():
             # Force application inspection even if capture transport checksums are bad.
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(capture),'settings.zeek'],cwd=tmp,capture_output=True,text=True)
             assert r.returncode==0,r.stdout+r.stderr
-            assert not (tmp/'reporter.log').exists(),e
+            assert not unexpected_reporter(tmp/'reporter.log'),e
             drone=tmp/'drone.log'
             rows=[json.loads(line) for line in drone.read_text().splitlines()] if drone.exists() else []
             if e['name'].startswith('Instruction_injection'):

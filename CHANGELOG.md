@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.16.0
+
+- Remove `scripts/wifi.zeek`. General Wi-Fi telemetry (all networks, devices and
+  disconnect bursts) is the separate [wifi-telemetry](https://github.com/zeekallab/wifi-telemetry)
+  package; `drone.log` keeps only drone activity.
+- Deauthentication **and disassociation** bursts are now detected by the drone
+  inventory against **any tracked drone access point** (every `drone_ssids`
+  pattern and `drone_ouis` vendor), not only `TELLO-` names. The finding appears on
+  that AP's single inventory record (`manipulation` event, then minute-limited
+  updates) instead of a second, separate record for the same BSSID. Disconnects on
+  non-drone networks never reach `drone.log`.
+- New field `wireless_disassoc_frames`. `wireless_deauth_frames`,
+  `wireless_eapol_key_frames` and `wireless_peak_burst` still count since the
+  network's previous record, and appear once any disconnect or EAPOL frame is seen.
+- Settings move from `DroneWiFi::` to `DroneInventory::` (see the migration table
+  in EXTENDED_README.md).
+- Fix SSID matching: `drone_ssids` patterns are now searched (`pattern in ssid`).
+  Previously `pattern == ssid` required a whole-string match, so prefix patterns such
+  as `/^(DJI|Mavic|Spark|Phantom|Tello)[-_ ]/`, `/^Anafi/` or `/^Skydio/` never
+  matched; only the fully anchored Tello pattern worked.
+- Tests: the harness ignores the package's own one-time `drone-detector:` INFO
+  diagnostics in `reporter.log`, which made every test fail since v0.15.0; the
+  wireless-profile tests use production logging defaults.
+
 ## v0.15.2
 
 - Flag `wireless_video_suspected` as soon as a minute's downlink crosses `video_bytes_per_minute`, not only on the first data frame after the window closes (missed on the AP200 GRE test: 4.3 MB/min stayed false).

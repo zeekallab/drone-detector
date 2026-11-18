@@ -84,11 +84,12 @@ def main():
     claims=[arp(t,src=a,dst=b) for t in [10,12,14] for a,b in [(A,B),(B,A)]]
     rows=check(arp_capture(claims),'@load ./package/arp\n')
     assert any(r['event_type']=='manipulation' and r['ts']-rows[0]['ts']<60 for r in rows),rows
-    # Wireless findings remain bounded and flush only unreported frames.
+    # A drone AP's disconnect burst is a prompt finding on its inventory record,
+    # and the final record flushes only frames not yet reported.
     from test_wifi import beacon, deauth, capture as wifi_capture
-    rows=check(wifi_capture([beacon()]+[deauth(i) for i in range(25)]),'@load ./package/wifi\n')
-    assert [r['event_type'] for r in rows]==['detection','final'],rows
-    assert sum(r['wireless_deauth_frames'] for r in rows)==25,rows
+    rows=check(wifi_capture([beacon()]+[deauth(i) for i in range(25)]))
+    assert [r['event_type'] for r in rows]==['detection','manipulation','final'],rows
+    assert sum(r.get('wireless_deauth_frames',0) for r in rows)==25,rows
     print('PASS: default lifecycle (short flows, prompt findings, repeat limits, final flush, shared SDK counts and schema).')
 
 if __name__=='__main__': main()

@@ -2,6 +2,7 @@
 """Optional real-capture alert checks using the user's extracted ISOT archive."""
 import os,json,subprocess,tempfile
 from pathlib import Path
+from test_detector import unexpected_reporter
 ROOT=Path(__file__).resolve().parents[1]
 BASE=Path(os.environ.get('ISOT_CAPTURE_ROOT',str(Path.home()/'Downloads/ISOT Drone Dataset/Raw Data')))
 
@@ -13,19 +14,19 @@ def main():
         print('SKIP: optional extracted ISOT archive missing; set ISOT_CAPTURE_ROOT to its Raw Data folder.');return
     for group,name in groups:
         with tempfile.TemporaryDirectory(prefix='drone-isot-alerts-') as tmp:
-            module=ROOT/'scripts/wifi.zeek' if group=='Password Cracking' else ROOT/'scripts'
+            module=ROOT/'scripts'
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(BASE/group/name),str(module),'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],cwd=tmp,text=True,capture_output=True)
             assert r.returncode==0,r.stderr
-            assert not (Path(tmp)/'reporter.log').exists(),name
+            assert not unexpected_reporter(Path(tmp)/'reporter.log'),name
             f=Path(tmp)/'drone.log';rows=[json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
-            alerts=[a for row in rows for a in row.get('manipulation_detection',[])]
+            alerts=[a for row in rows for a in row.get('manipulation_detection',[]) if group!='Password Cracking' or row['protocol']=='802.11']
             if group=='Manipulation':
                 assert any(a.startswith('Replay-like control traffic:') for a in alerts),(name,alerts)
                 assert any(a.startswith('Malformed control traffic:') for a in alerts),(name,alerts)
             elif group=='Regular':
                 assert rows and not alerts,(name,alerts)
             else:
-                assert alerts and all(a.startswith('Wireless deauthentication burst:') for a in alerts),name
+                assert alerts and all(a.startswith(('Wireless deauthentication burst:','Wireless disassociation burst:')) for a in alerts),name
                 assert any(row.get('wireless_eapol_key_frames',0)>0 for row in rows),name
                 assert all('uid' not in row for row in rows if row['protocol']=='802.11'),name
             groups_by_key={}

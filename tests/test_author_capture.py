@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from fetch_fixture import DEST,SHA256,digest
+from test_detector import unexpected_reporter
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -24,7 +25,7 @@ def main():
                                 f'redef DroneDetector::include_diagnostics = {"T" if diagnostic else "F"};\n')
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(DEST),str(settings)],cwd=tmp,text=True,capture_output=True)
             assert r.returncode==0,r.stdout+r.stderr
-            assert not (tmp/'reporter.log').exists(),(tmp/'reporter.log').read_text()
+            assert not unexpected_reporter(tmp/'reporter.log'),(tmp/'reporter.log').read_text()
             rows=[json.loads(x) for x in (tmp/'drone.log').read_text().splitlines()]
             conns=[json.loads(x) for x in (tmp/'conn.log').read_text().splitlines()]
             assert len(rows)==4,rows

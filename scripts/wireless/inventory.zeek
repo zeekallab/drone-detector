@@ -3,12 +3,20 @@
 # Matches access points by SSID pattern or vendor OUI (beacons and probe
 # responses) and drone-vendor stations by their probe requests, then tracks
 # channel, signal, associated stations and data volume, encrypted or not.
+# Deauthentication/disassociation bursts against a tracked drone network are
+# reported as findings on that network's record; disconnects on any other network
+# are general Wi-Fi activity and never reach drone.log.
+@load ../main
 @load ./radiotap
-@load ../wifi
 
 module DroneInventory;
 
 export {
+    ## Disconnect-burst detection on tracked drone access points.
+    const burst_interval = 10secs &redef;
+    const minimum_disconnect_frames: count = 20 &redef;
+    const max_recent_frames: count = 1024 &redef;
+
     ## SSID patterns of drone access points. Extend with redef.
     const drone_ssids: set[pattern] = {
         /^TELLO-[0-9A-Fa-f]{6}$/,
@@ -35,6 +43,17 @@ export {
     const max_stations: count = 8 &redef;
 
     redef record DroneDetector::Info += {
+        wireless_bssid: string &log &optional;
+        wireless_ssid: string &log &optional;
+        ## Distinct qualifying deauthentication/disassociation frames since this
+        ## network's previous record (not cumulative).
+        wireless_deauth_frames: count &log &optional;
+        wireless_disassoc_frames: count &log &optional;
+        ## EAPOL key frames since the previous record: context, not attack proof.
+        wireless_eapol_key_frames: count &log &optional;
+        ## Largest disconnect count in one burst bucket since the previous record.
+        wireless_peak_burst: count &log &optional;
+        wireless_tracking_limited: bool &log &optional;
         wireless_role: string &log &optional;
         wireless_vendor: string &log &optional;
         wireless_channel_mhz: count &log &optional;
@@ -51,6 +70,15 @@ export {
         wireless_first_seen: time &log &optional;
     };
 }
+
+type Burst: record {
+    start: time &optional;
+    frames: count &default=0;
+    seen: set[string] &default=set();
+};
+
+const deauth_finding = "Wireless deauthentication burst: repeated disconnect frames on a drone Wi-Fi network";
+const disassoc_finding = "Wireless disassociation burst: repeated disconnect frames on a drone Wi-Fi network";
 
 type Emitter: record {
     role: string;
@@ -72,6 +100,16 @@ type Emitter: record {
     video: bool &default=F;
     first_seen: time;
     logging: DroneDetector::LogState &default=DroneDetector::LogState();
+    # Disconnect evidence; the counts restart after each record.
+    deauth: Burst &default=Burst();
+    disassoc: Burst &default=Burst();
+    deauth_frames: count &default=0;
+    disassoc_frames: count &default=0;
+    eapol: count &default=0;
+    peak: count &default=0;
+    disconnect_seen: bool &default=F;
+    limited: bool &default=F;
+    findings: set[string] &default=set();
 };
 
 global emit: function(m: string, e: Emitter, final: bool);
@@ -84,13 +122,15 @@ function vendor_of(m: string): string
 
 function drone_ssid(ssid: string): bool
     {
-    for ( p in drone_ssids ) if ( p == ssid ) return T;
+    # "pattern in string" searches; "pattern == string" would require a whole-string
+    # match, so prefix patterns such as /^Skydio/ would never fire.
+    for ( p in drone_ssids ) if ( p in ssid ) return T;
     return F;
     }
 
 function emit(m: string, e: Emitter, final: bool)
     {
-    local kind=DroneDetector::log_kind(e$logging,set(),final);
+    local kind=DroneDetector::log_kind(e$logging,e$findings,final);
     if ( kind == "" ) return;
     local rec=DroneDetector::Info($ts=network_time(),$event_type=kind,$protocol="802.11",
         $likely_manufacturer=e$vendor,$evidence=e$evidence,$inspection_limited=F,
@@ -103,7 +143,58 @@ function emit(m: string, e: Emitter, final: bool)
     if ( e?$channel ) rec$wireless_channel_mhz=e$channel;
     if ( e?$sig_min ) { rec$wireless_signal_dbm_min=e$sig_min; rec$wireless_signal_dbm_max=e$sig_max; rec$wireless_signal_dbm_last=e$sig_last; }
     if ( e?$protected ) rec$wireless_protected=e$protected;
+    if ( e$disconnect_seen )
+        {
+        rec$wireless_deauth_frames=e$deauth_frames;
+        rec$wireless_disassoc_frames=e$disassoc_frames;
+        rec$wireless_eapol_key_frames=e$eapol;
+        rec$wireless_peak_burst=e$peak;
+        rec$wireless_tracking_limited=e$limited;
+        }
     DroneDetector::write_state(rec,e$logging,kind);
+    e$findings=set(); e$deauth_frames=0; e$disassoc_frames=0; e$eapol=0; e$peak=0;
+    }
+
+# Count one deauthentication/disassociation frame against a tracked drone AP.
+# Only distinct (addresses + sequence control), unprotected, non-retry frames in a
+# fixed burst_interval bucket qualify; each type has its own bucket and threshold.
+function disconnect(e: Emitter, data: string, disassoc: bool)
+    {
+    local b=disassoc ? e$disassoc : e$deauth;
+    if ( ! b?$start || network_time()-b$start >= burst_interval ) b=Burst($start=network_time());
+    local key=data[4:24];
+    if ( key !in b$seen )
+        {
+        if ( |b$seen| >= max_recent_frames ) e$limited=T;
+        else
+            {
+            add b$seen[key]; ++b$frames;
+            if ( disassoc ) ++e$disassoc_frames; else ++e$deauth_frames;
+            if ( b$frames > e$peak ) e$peak=b$frames;
+            if ( b$frames >= minimum_disconnect_frames ) add e$findings[disassoc ? disassoc_finding : deauth_finding];
+            }
+        }
+    e$disconnect_seen=T; e$logging$dirty=T;
+    if ( disassoc ) e$disassoc=b; else e$deauth=b;
+    }
+
+# EAPOL key frame in an unprotected, unaggregated data frame (header layout per
+# QoS/HT-control bits). Context for a disconnect burst, never proof of cracking.
+function eapol_key(data: string, flags: count, subtype: count): bool
+    {
+    if ( (flags/64)%2 == 1 || subtype%8 >= 4 ) return F;
+    local header: count=24;
+    if ( subtype >= 8 )
+        {
+        if ( |data| < 26 || (DroneRadio::byte(data,24)/128)%2 == 1 ) return F; # A-MSDU unsupported.
+        header+=2;
+        if ( flags >= 128 ) header+=4;
+        }
+    if ( |data| < header+12 || data[header:header+8] != "\xaa\xaa\x03\x00\x00\x00\x88\x8e" ) return F;
+    local e=header+8;
+    if ( DroneRadio::byte(data,e) < 1 || DroneRadio::byte(data,e) > 3 || DroneRadio::byte(data,e+1) != 3 ) return F;
+    local length=bytestring_to_count(data[e+2:e+4]);
+    return length >= 95 && |data| >= e+4+length;
     }
 
 function observe_signal(e: Emitter, rt: DroneRadio::Radiotap)
@@ -171,6 +262,19 @@ event DroneRadio::frame(rt: DroneRadio::Radiotap, data: string)
         emit(tx,e,F);
         return;
         }
+    if ( kind == 0 && (subtype == 12 || subtype == 10) )
+        {
+        # Disconnects count only against a drone AP the inventory already tracks
+        # (addr3 is the BSSID). Protected or retry frames are not attack evidence.
+        if ( |data| < 26 || (flags/64)%2 == 1 || (flags/8)%2 == 1 ) return;
+        local target=DroneRadio::mac(data[16:22]);
+        if ( target !in emitters || emitters[target]$role != "access-point" ) return;
+        local net=emitters[target];
+        disconnect(net,data,subtype == 10);
+        emitters[target]=net; # refresh &write_expire
+        emit(target,net,F);
+        return;
+        }
     if ( kind != 2 || |data| < 24 ) return;
     # Data frames: BSSID position follows the ToDS/FromDS bits.
     local ds=flags%4;
@@ -188,6 +292,7 @@ event DroneRadio::frame(rt: DroneRadio::Radiotap, data: string)
     # Flag as soon as one minute's downlink crosses the threshold.
     if ( ! ap$video && ap$window_down >= video_bytes_per_minute )
         { ap$video=T; ap$evidence+="+sustained-downlink"; }
+    if ( eapol_key(data,flags,subtype) ) { ++ap$eapol; ap$disconnect_seen=T; }
     ap$logging$dirty=T;
     emitters[bssid]=ap; # refresh &write_expire
     emit(bssid,ap,F);

@@ -53,6 +53,15 @@ def capture(chunks, port=2001):
     return out
 
 
+def unexpected_reporter(path):
+    """reporter.log lines other than the package's own one-time INFO diagnostics."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    lines = [l for l in path.read_text().splitlines() if l and not l.startswith('#')]
+    return [l for l in lines if not ('Reporter::INFO' in l and 'drone-detector: ' in l)]
+
+
 def run(data, settings='', live=False, lifecycle=False):
     # Legacy threshold regressions retain their original emission policy.
     # test_logging_policy exercises the production defaults independently.
@@ -71,7 +80,7 @@ def run(data, settings='', live=False, lifecycle=False):
         def read(name):
             p=tmp/(name+'.log')
             return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
-        assert not read('reporter'),read('reporter')
+        assert not unexpected_reporter(tmp/'reporter.log'),read('reporter')
         rows = read('drone')
         if not live:
             rows = list({r['uid']: r for r in rows}.values())

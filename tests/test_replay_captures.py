@@ -2,6 +2,7 @@
 """Six Replay captures, six Manipulation regressions, three normal comparisons."""
 import json,os,subprocess,tempfile
 from pathlib import Path
+from test_detector import unexpected_reporter
 ROOT=Path(__file__).resolve().parents[1]
 BASE=Path(os.environ.get('ISOT_CAPTURE_ROOT',str(Path.home()/'Downloads/ISOT Drone Dataset/Raw Data')))
 def main():
@@ -13,7 +14,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='drone-replay-') as tmp:
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(p),str(ROOT/'scripts'),'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],cwd=tmp,capture_output=True,text=True)
             assert r.returncode==0,r.stderr
-            assert not (Path(tmp)/'reporter.log').exists(),p.name
+            assert not unexpected_reporter(Path(tmp)/'reporter.log'),p.name
             f=Path(tmp)/'drone.log';rows=[json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
             assert rows,p.name
             def hits(prefix):return sum(any(a.startswith(prefix) for a in x.get('manipulation_detection',[])) for x in rows)

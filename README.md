@@ -9,7 +9,16 @@ new manipulation findings promptly, and a final summary if activity remains
 unreported. Flight changes alone do not generate extra records. Traffic can
 come from simulators or replays; detection does not prove a drone is airborne.
 
-## Latest changes — v0.14.0
+## Latest changes — v0.16.0
+
+**Wi-Fi is drone-only:** `wifi.zeek` is removed. Deauthentication and
+disassociation bursts are detected against any tracked drone network and reported
+on that network's inventory record; general Wi-Fi activity belongs to the separate
+[wifi-telemetry](https://github.com/zeekallab/wifi-telemetry) package. Prefix
+`drone_ssids` patterns (DJI, Mavic, Anafi, Skydio, …) now match. Settings moved
+from `DroneWiFi::` to `DroneInventory::`. See the [changelog](CHANGELOG.md).
+
+### Earlier changes — v0.14.0
 
 **Findings no longer wait for the next minute:** each new finding type can
 produce a prompt record, and pending activity is summarized on flow close or
@@ -47,7 +56,7 @@ field. MAVLink telemetry and existing detections are unchanged.
 | Control alerts | Older/rapid replay-like controls, malformed controls, repetitive opposing maneuvers, and source-port churn |
 | MAVLink alerts | Position discontinuity, altitude discontinuity, and multiple control system IDs |
 | ARP (enabled by default) | ARP interception patterns on a drone flow |
-| Wi-Fi (enabled by default) | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication bursts |
+| Wi-Fi (enabled by default) | Drone access-point inventory, Remote ID (ASTM F3411) over Wi-Fi beacon/NAN, deauthentication/disassociation bursts against drone networks |
 
 Alerts are investigation signals, not proof of malicious intent or successful
 commands. [Definitions and limits](EXTENDED_README.md#alert-reference).
@@ -124,7 +133,13 @@ It adds:
   (vendor IE `FA:0B:BC` type `0x0D`) and Wi-Fi NAN. Logs the UAS ID, drone
   position, altitude, height, speed, heading, status, operator location,
   operator ID and self-description.
-- **Deauthentication bursts** on Tello-named networks (the existing `wifi.zeek`).
+- **Disconnect bursts against drone networks:** 20 distinct, unprotected,
+  non-retry deauthentication (or, separately, disassociation) frames within 10
+  seconds against a tracked drone access point add a `manipulation_detection`
+  finding to that AP's record. EAPOL key frames are counted as context.
+  Disconnects on other networks are not drone activity and aren't logged here;
+  load [wifi-telemetry](https://github.com/zeekallab/wifi-telemetry) for general
+  Wi-Fi networks, devices and disconnect findings.
 
 Zeek's built-in 802.11 analyzer also turns unencrypted data frames, for example
 Tello's default open network, into IP, so the Tello SDK, binary and video

@@ -2,6 +2,7 @@
 """Two selected real video captures; avoids scanning the entire large folder."""
 import json,os,subprocess,tempfile
 from pathlib import Path
+from test_detector import unexpected_reporter
 ROOT=Path(__file__).resolve().parents[1]
 BASE=Path(os.environ.get('ISOT_CAPTURE_ROOT',str(Path.home()/'Downloads/ISOT Drone Dataset/Raw Data')))
 def main():
@@ -11,7 +12,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='drone-video-') as tmp:
             r=subprocess.run([os.environ.get('ZEEK','zeek'),'-C','-r',str(BASE/'Video'/name),str(ROOT/'scripts'),'LogAscii::use_json=T','DroneDetector::immediate_detections=F','DroneDetector::final_updates=F'],cwd=tmp,capture_output=True,text=True)
             assert r.returncode==0,r.stderr
-            assert not (Path(tmp)/'reporter.log').exists(),name
+            assert not unexpected_reporter(Path(tmp)/'reporter.log'),name
             f=Path(tmp)/'drone.log';rows=[json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
             videos=[r for r in rows if r.get('video_active')]
             assert videos,name

@@ -35,12 +35,15 @@ series of rejected password guesses. MAC addresses and SSIDs can be spoofed.
 
 ## Implemented signal
 
-The optional `scripts/wifi.zeek` module adds this description to `alert`:
+Since v0.16.0 the drone inventory (`scripts/wireless/inventory.zeek`) adds this
+description to `manipulation_detection` on the drone AP's record (the original
+`scripts/wifi.zeek` module, Tello-named networks only, has been removed):
 
-> Wireless deauthentication burst: repeated disconnect frames on a Tello-named Wi-Fi network
+> Wireless deauthentication burst: repeated disconnect frames on a drone Wi-Fi network
 
-It requires an observed matching beacon and 20 distinct, unprotected, non-retry
-deauthentication frames within a 10-second bucket. It excludes frames flagged
+It requires the inventory to have seen the drone AP's beacon or probe response,
+and 20 distinct, unprotected, non-retry deauthentication frames within a 10-second
+bucket. Disassociation bursts are reported separately. It excludes frames flagged
 bad-FCS by radiotap and deduplicates management-frame identities within the bucket.
 EAPOL key-frame counts supply context; a handshake alone never raises this alert.
 

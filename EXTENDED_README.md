@@ -423,32 +423,64 @@ cumulative. `binary_tracking_limited` warns that bounded fingerprint tracking
 omitted information. CRC validation does not authenticate a sender. The parser
 identifies binary traffic but does not yet decode its flight-state measurements.
 
-### Wireless deauthentication burst
+### Wireless disconnect burst on a drone network
 
-**Description:** Repeated unprotected, non-retry Wi-Fi disconnect frames affect
-a network whose observed beacon SSID matches `TELLO-` plus six hexadecimal digits.
-This can indicate wireless disruption or an attempt to provoke WPA handshakes.
+**Description:** Repeated unprotected, non-retry Wi-Fi disconnect frames target a
+**drone access point the inventory tracks**: one whose beacon or probe-response
+SSID matches `DroneInventory::drone_ssids`, or whose BSSID has a
+`DroneInventory::drone_ouis` vendor prefix. This can indicate disruption of the
+drone's link or an attempt to provoke WPA handshakes. Two findings, counted
+separately:
+
+> Wireless deauthentication burst: repeated disconnect frames on a drone Wi-Fi network
+
+> Wireless disassociation burst: repeated disconnect frames on a drone Wi-Fi network
+
+Disconnect bursts on any other network are general Wi-Fi activity and never
+reach `drone.log`; the separate [wifi-telemetry](https://github.com/zeekallab/wifi-telemetry)
+package reports them for all networks in `wifi_findings.log`.
 
 This alert is **loaded by default**. It needs 802.11 frames: a radiotap capture
 interface, or raw 802.11 in GRE 0x8200 sent to `DroneRadio::gre_decoys`. An
 ordinary Ethernet/IP mirror has no wireless management frames, so it logs
 nothing there. The raw packet handler has higher processing cost (turn it off
 with `redef DroneRadio::enabled = F;`); live Corelight support/performance has
-not been validated. The radiotap path was tested offline on Zeek 9.0.1.
+not been validated.
 
-The default is 20 distinct deauthentication frames within a 10-second bucket,
-after observing a matching beacon. Retry-marked frames, duplicate management-frame
-identities within the bucket, protected management payloads and frames marked
-bad-FCS by radiotap are excluded. EAPOL key frames are counted as supporting
-context, **never as proof of password guessing**. Normal handshakes alone do not
-trigger an alert. Offline password cracking cannot be inferred from these captures.
+The default is 20 distinct frames of one type within a 10-second bucket, counted
+only after the inventory has seen that AP's beacon or probe response; disconnects
+that arrive before the AP is known are not counted. The frame's address 3 must be
+the tracked BSSID. Retry-marked frames, duplicate frame identities (addresses
+and sequence control) within the bucket, protected management frames and frames
+marked bad-FCS by radiotap are excluded. Deauthentication and disassociation have
+separate buckets, so ten of each don't combine. EAPOL key frames on the AP's
+network are counted as supporting context, **never as proof of password
+guessing**. Normal handshakes alone do not trigger an alert. Offline password
+cracking cannot be inferred from these captures.
 
-Wireless records contain BSSID/SSID and deauthentication/EAPOL counts. They omit
-IP connection ID and UID because no IP connection exists for these management
-frames. `likely_manufacturer=unknown`: an SSID is a claim and can be spoofed.
-MAC transmitter addresses can also be spoofed and do not identify an attacker.
-The rate limit is once per minute per BSSID. Tracking is bounded; a sticky
-`wireless_tracking_limited` flag means counts may be incomplete.
+The finding is added to the AP's existing inventory record (`protocol: 802.11`):
+the first occurrence is a prompt `manipulation` record, and later bursts ride the
+minute-limited updates. Once any disconnect or EAPOL frame has been seen, records
+include `wireless_deauth_frames`, `wireless_disassoc_frames`,
+`wireless_eapol_key_frames` and `wireless_peak_burst`. These count **since the
+network's previous record** (they restart after each record), so the final
+record flushes only frames not yet reported. Records omit IP connection ID and UID
+because no IP connection exists for these management frames. An SSID is a claim
+and can be spoofed; MAC transmitter addresses can also be spoofed and do not
+identify an attacker. Tracking is bounded; a sticky `wireless_tracking_limited`
+flag means counts may be incomplete.
+
+**Migration from `wifi.zeek` (removed in v0.16.0):**
+
+| Before | Now |
+|---|---|
+| `DroneWiFi::minimum_deauth_frames` | `DroneInventory::minimum_disconnect_frames` (applies to each disconnect type) |
+| `DroneWiFi::burst_interval` | `DroneInventory::burst_interval` |
+| `DroneWiFi::max_recent_frames` | `DroneInventory::max_recent_frames` |
+| `DroneWiFi::max_networks` | `DroneInventory::max_emitters` (all tracked drone emitters) |
+| `DroneWiFi::watched_ssid` (Tello only) | `DroneInventory::drone_ssids` / `drone_ouis` (any drone network) |
+| A second 802.11 record per Tello BSSID, evidence `observed-tello-named-ssid+deauthentication-burst` | The finding on that AP's inventory record (evidence `drone-ssid`, `drone-vendor-oui`, …) |
+| Finding text "…on a Tello-named Wi-Fi network" | "…on a drone Wi-Fi network"; plus a disassociation finding |
 
 ```sh
 # From a separate output directory (the package loads the Wi-Fi modules):
@@ -633,9 +665,9 @@ redef DroneTelloBinary::replay_min_distinct = 5;
 redef DroneTelloBinary::replay_min_fraction = 0.5;
 redef DroneTelloBinary::malformed_min_frames = 3;
 redef DroneTelloBinary::max_fingerprints = 2048;
-# Wi-Fi deauthentication tuning:
-redef DroneWiFi::minimum_deauth_frames = 20;
-redef DroneWiFi::burst_interval = 10secs;
+# Disconnect bursts against drone networks:
+redef DroneInventory::minimum_disconnect_frames = 20;
+redef DroneInventory::burst_interval = 10secs;
 ```
 
 All limits/intervals must be positive; fraction must be between 0 and 1. These
