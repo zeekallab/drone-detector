@@ -9,7 +9,16 @@ new manipulation findings promptly, and a final summary if activity remains
 unreported. Flight changes alone do not generate extra records. Traffic can
 come from simulators or replays; detection does not prove a drone is airborne.
 
-## Latest changes — v0.16.0
+## Latest changes — v0.17.0
+
+**Wireless records link to `conn.log`:** 802.11 inventory and Remote ID records
+now carry `wireless_related_uids`, the `uid`s of flows Zeek decapsulated from the
+wireless feed (GRE 0x8200 → unencrypted 802.11 → IP) to or from the same drone
+MAC. Encrypted networks (most DJI links) and management-only traffic such as
+Remote ID beacons have no IP flows, so the field is absent there. See the
+[changelog](CHANGELOG.md).
+
+### Earlier changes — v0.16.0
 
 **Wi-Fi is drone-only:** `wifi.zeek` is removed. Deauthentication and
 disassociation bursts are detected against any tracked drone network and reported
@@ -143,7 +152,14 @@ It adds:
 
 Zeek's built-in 802.11 analyzer also turns unencrypted data frames, for example
 Tello's default open network, into IP, so the Tello SDK, binary and video
-detectors work on monitor captures too.
+detectors work on monitor captures and on the GRE feed too. Those flows appear in
+`conn.log` with `tunnel_parents` set, and their `uid`s are listed in the wireless
+record's **`wireless_related_uids`** when the drone's MAC (the AP's BSSID, or the
+Remote ID transmitter) is their 802.11 source or destination. Only flows inside
+GRE to a `gre_decoys` address are linked; up to `DroneRadio::max_related_uids`
+(16) per MAC, kept for `DroneRadio::flow_mac_timeout` (15 min) after the last new
+flow. A record that gains a new related flow is logged again (minute-limited, or
+in the final summary).
 
 Limits: a Wi-Fi card only sees Wi-Fi. DJI OcuSync/O3/O4 links are not Wi-Fi and
 need an SDR. Remote ID sent only over Bluetooth LE is not visible. One radio

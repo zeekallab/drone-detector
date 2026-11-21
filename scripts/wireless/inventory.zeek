@@ -110,6 +110,8 @@ type Emitter: record {
     disconnect_seen: bool &default=F;
     limited: bool &default=F;
     findings: set[string] &default=set();
+    # Related flow uids already written; a new one is news for the next record.
+    flows: set[string] &default=set();
 };
 
 global emit: function(m: string, e: Emitter, final: bool);
@@ -130,6 +132,8 @@ function drone_ssid(ssid: string): bool
 
 function emit(m: string, e: Emitter, final: bool)
     {
+    local flows=DroneRadio::related_uids(m);
+    if ( |flows| != |e$flows| ) e$logging$dirty=T;
     local kind=DroneDetector::log_kind(e$logging,e$findings,final);
     if ( kind == "" ) return;
     local rec=DroneDetector::Info($ts=network_time(),$event_type=kind,$protocol="802.11",
@@ -143,6 +147,7 @@ function emit(m: string, e: Emitter, final: bool)
     if ( e?$channel ) rec$wireless_channel_mhz=e$channel;
     if ( e?$sig_min ) { rec$wireless_signal_dbm_min=e$sig_min; rec$wireless_signal_dbm_max=e$sig_max; rec$wireless_signal_dbm_last=e$sig_last; }
     if ( e?$protected ) rec$wireless_protected=e$protected;
+    if ( |flows| > 0 ) { rec$wireless_related_uids=flows; e$flows=flows; }
     if ( e$disconnect_seen )
         {
         rec$wireless_deauth_frames=e$deauth_frames;

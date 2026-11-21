@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.17.0
+
+- New field `wireless_related_uids` on `802.11` and `remote-id` records: `uid`s
+  of connections decapsulated from the wireless feed in which the drone's MAC
+  (BSSID / Remote ID transmitter) is the 802.11 source or destination. Zeek's GRE
+  analyzer unwraps 0x8200 and its 802.11 analyzer sets the connection's
+  `orig_l2_addr`/`resp_l2_addr` to the 802.11 addresses; only connections whose
+  tunnel is GRE to a `DroneRadio::gre_decoys` address are indexed.
+- New settings `DroneRadio::max_related_uids` (16), `DroneRadio::max_flow_macs`
+  (1024) and `DroneRadio::flow_mac_timeout` (15 min).
+- A newly related flow marks the record changed, so it appears in the next
+  update or the final summary.
+- Cluster note: linking is per worker. It works when the GRE feed and its inner
+  flows reach the same worker, the usual case when load balancing hashes the
+  outer GRE addresses; it does not share across workers.
+
 ## v0.16.0
 
 - Remove `scripts/wifi.zeek`. General Wi-Fi telemetry (all networks, devices and

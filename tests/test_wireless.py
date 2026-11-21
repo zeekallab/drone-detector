@@ -76,6 +76,16 @@ def eth_capture(packets):
 def by(rows,protocol):
     return [r for r in rows if r['protocol']==protocol]
 
+def udp_data(ds,bssid,src,dst,sport,dport,seq,src_ip,dst_ip):
+    # Unencrypted 802.11 data frame (no radiotap) carrying LLC/SNAP IPv4/UDP.
+    payload=b'command'
+    u=struct.pack('!HHHH',sport,dport,8+len(payload),0)+payload
+    ip=struct.pack('!BBHHHBBH4s4s',0x45,0,20+len(u),1,0,64,17,0,bytes(src_ip),bytes(dst_ip))
+    ip=ip[:10]+struct.pack('!H',ip_checksum(ip))+ip[12:]
+    a1,a2,a3=(bssid,src,dst) if ds==1 else (dst,bssid,src)
+    fc=0x0008|(0x0100 if ds==1 else 0x0200)
+    return struct.pack('<HH',fc,0)+a1+a2+a3+struct.pack('<H',seq<<4)+b'\xaa\xaa\x03\x00\x00\x00\x08\x00'+ip+u
+
 def main():
     cases=0
     # Drone AP found by SSID and OUI; downlink volume and the station are tracked.
@@ -139,6 +149,31 @@ def main():
     from test_wifi import beacon as tello_beacon, deauth
     rows,_=run(eth_capture([gre(tello_beacon()[8:])]+[gre(deauth(i)[8:]) for i in range(25)]),WIRELESS,live=True)
     assert any(r.get('wireless_deauth_frames')==20 for r in rows),rows
+    cases+=1
+    # Decapsulated flows (GRE 0x8200 -> open 802.11 -> IP) are linked by drone MAC.
+    phone,drone=[192,168,10,2],[192,168,10,1]
+    flows=[]
+    for i in range(3):
+        flows.append(gre(udp_data(1,AP,STA,AP,8890,8889,i,phone,drone)))     # phone -> drone
+        flows.append(gre(udp_data(2,AP,AP,STA,8889,8890,i,drone,phone)))     # drone -> phone
+    flows.append(gre(udp_data(1,AP,STA,AP,40000,11111,9,phone,drone)))       # second flow
+    other=gre(udp_data(1,OTHER,STA,OTHER,5000,6000,1,[10,0,0,2],[10,0,0,1])) # not the drone
+    rows,conns=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')))]+flows+[other]),WIRELESS,live=True)
+    ap=by(rows,'802.11')
+    want={c['uid'] for c in conns if c.get('id.resp_p') in (8889,11111)}
+    assert len(want)==2,conns
+    assert set(ap[-1].get('wireless_related_uids',[]))==want,(ap,conns)
+    assert 'wireless_related_uids' not in ap[0],ap  # beacon came before any flow
+    cases+=1
+    # Remote ID record links flows from its transmitter MAC.
+    rows,conns=run(eth_capture([gre(strip(rid_beacon())),other]),WIRELESS,live=True)
+    rid=by(rows,'remote-id')
+    oth={c['uid'] for c in conns if c.get('id.resp_p')==6000}
+    assert len(oth)==1 and set(rid[-1].get('wireless_related_uids',[]))==oth,(rid,conns)
+    cases+=1
+    # The same inner flow outside the wireless feed (GRE to a non-decoy) is not linked.
+    rows,conns=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')))]+[gre(udp_data(1,AP,STA,AP,8890,8889,i,phone,drone),dst='10.9.9.9') for i in range(3)]),WIRELESS,live=True)
+    assert conns and not any('wireless_related_uids' in r for r in rows),(rows,conns)
     cases+=1
     # GRE to an address that is not a configured decoy is ignored.
     rows,_=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')),dst='10.9.9.9'),gre(strip(rid_beacon()),dst='10.9.9.9')]),WIRELESS,live=True)

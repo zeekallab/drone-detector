@@ -63,6 +63,8 @@ type Broadcaster: record {
     signal: int &optional;
     channel: count &optional;
     logging: DroneDetector::LogState &default=DroneDetector::LogState();
+    # Related flow uids already written; a new one is news for the next record.
+    flows: set[string] &default=set();
 };
 
 global emit: function(m: string, b: Broadcaster, final: bool);
@@ -141,6 +143,8 @@ function decode(b: Broadcaster, data: string): bool
 
 function emit(m: string, b: Broadcaster, final: bool)
     {
+    local flows=DroneRadio::related_uids(m);
+    if ( |flows| != |b$flows| ) b$logging$dirty=T;
     local kind=DroneDetector::log_kind(b$logging,set(),final);
     if ( kind == "" ) return;
     local rec=DroneDetector::Info($ts=network_time(),$event_type=kind,$protocol="remote-id",
@@ -158,6 +162,7 @@ function emit(m: string, b: Broadcaster, final: bool)
     if ( b?$description ) rec$remoteid_description=b$description;
     if ( b?$signal ) rec$remoteid_signal_dbm=b$signal;
     if ( b?$channel ) rec$remoteid_channel_mhz=b$channel;
+    if ( |flows| > 0 ) { rec$wireless_related_uids=flows; b$flows=flows; }
     DroneDetector::write_state(rec,b$logging,kind);
     }
 

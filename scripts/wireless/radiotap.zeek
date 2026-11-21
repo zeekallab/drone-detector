@@ -6,6 +6,13 @@
 #      address and mirrored to the sensor. An optional GRE key carries channel
 #      MHz (high 16 bits) and signal dBm (low 16 bits, two's complement).
 # Uses raw_packet, which runs per packet. Disable with redef DroneRadio::enabled = F.
+#
+# Zeek itself decapsulates GRE 0x8200 and turns unencrypted 802.11 data frames
+# into IP connections whose orig/resp l2_addr are the 802.11 source/destination
+# MACs. Those connection uids are indexed by MAC here so wireless records can
+# list the decapsulated flows of the same drone (wireless_related_uids).
+@load ../main
+
 module DroneRadio;
 
 export {
@@ -32,7 +39,22 @@ export {
     global mac: function(data: string): string;
     ## Signed little-endian 32-bit value as double.
     global le32s: function(data: string, offset: count): double;
+
+    ## Uids of connections decapsulated from the wireless feed in which this MAC
+    ## was the 802.11 source or destination. Empty when none were seen.
+    global related_uids: function(mac: string): set[string];
+    ## Bounds for the MAC -> uid index.
+    const max_related_uids: count = 16 &redef;
+    const max_flow_macs: count = 1024 &redef;
+    const flow_mac_timeout = 15min &redef;
 }
+
+redef record DroneDetector::Info += {
+    ## Uids of conn.log flows (decapsulated from the wireless feed) to or from
+    ## this record's drone MAC: the BSSID for 802.11 records, the transmitter for
+    ## Remote ID. Bounded by DroneRadio::max_related_uids.
+    wireless_related_uids: set[string] &log &optional;
+};
 
 function byte(data: string, offset: count): count
     { return bytestring_to_count(data[offset:offset+1]); }
@@ -142,6 +164,37 @@ function from_gre(raw: string)
     if ( (gflags/4096)%2 == 1 ) h+=4;                                  # sequence present
     if ( limit < h+10 ) return;
     deliver(rt,raw[h:limit]);
+    }
+
+global flow_uids: table[string] of set[string] &write_expire=flow_mac_timeout;
+
+function related_uids(mac: string): set[string]
+    { return mac in flow_uids ? copy(flow_uids[mac]) : set(); }
+
+function index_flow(mac: string, uid: string)
+    {
+    if ( mac == "" || mac == "ff:ff:ff:ff:ff:ff" ) return;
+    if ( mac !in flow_uids )
+        {
+        if ( |flow_uids| >= max_flow_macs ) return;
+        flow_uids[mac]=set();
+        }
+    if ( uid in flow_uids[mac] || |flow_uids[mac]| >= max_related_uids ) return;
+    add flow_uids[mac][uid];
+    flow_uids[mac]=flow_uids[mac]; # refresh &write_expire
+    }
+
+# Only connections carried inside GRE to a configured decoy: their l2 addresses
+# are 802.11 MACs, not the wired Ethernet addresses of the GRE packet.
+event new_connection(c: connection) &group="drone-wireless"
+    {
+    if ( ! c?$tunnel ) return;
+    local from_feed=F;
+    for ( i in c$tunnel )
+        if ( c$tunnel[i]$tunnel_type == Tunnel::GRE && c$tunnel[i]$cid$resp_h in gre_decoys ) from_feed=T;
+    if ( ! from_feed ) return;
+    if ( c$orig?$l2_addr ) index_flow(c$orig$l2_addr,c$uid);
+    if ( c$resp?$l2_addr ) index_flow(c$resp$l2_addr,c$uid);
     }
 
 event raw_packet(p: raw_pkt_hdr) &group="drone-wireless"
