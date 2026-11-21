@@ -40,8 +40,9 @@ def pack(*msgs):
     assert all(len(m)==25 for m in msgs)
     return bytes([0xf2,25,len(msgs)])+b''.join(msgs)
 
-def rid_beacon():
-    body=bytes.fromhex('fa0bbc0d')+b'\x07'+pack(basic_id(),location(),system())
+def rid_beacon(uas=b'1581F5FKD229400000AA',id_byte=0x12):
+    bid=bytes([0x02,id_byte])+uas.ljust(20,b'\0')+b'\0'*3
+    body=bytes.fromhex('fa0bbc0d')+b'\x07'+pack(bid,location(),system())
     return beacon(b'anything',src=OTHER,ies=bytes([221,len(body)])+body)
 
 def rid_nan():
@@ -175,6 +176,18 @@ def main():
     rows,conns=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')))]+[gre(udp_data(1,AP,STA,AP,8890,8889,i,phone,drone),dst='10.9.9.9') for i in range(3)]),WIRELESS,live=True)
     assert conns and not any('wireless_related_uids' in r for r in rows),(rows,conns)
     cases+=1
+    # Remote ID serial -> manufacturer from the built-in 4-character codes.
+    for uas,maker in [(b'1581F6Z9C238D00323P4','DJI'),(b'16335F2439','Wing Aviation'),(b'1748C0000000ABC','Autel Robotics')]:
+        rows,_=run(capture([rid_beacon(uas)]),WIRELESS,live=True)
+        r=by(rows,'remote-id')[-1]
+        assert r['likely_manufacturer']==maker and r['remoteid_manufacturer']==maker,r
+        assert r['remoteid_identity_source']=='manufacturer-code' and 'remoteid_model' not in r,r
+    # Unknown code, and a non-serial ID type, stay unknown.
+    for uas,idb in [(b'9999F0000000AAA',0x12),(b'1581F6Z9C238D00323P4',0x22)]:
+        rows,_=run(capture([rid_beacon(uas,idb)]),WIRELESS,live=True)
+        r=by(rows,'remote-id')[-1]
+        assert r['likely_manufacturer']=='unknown' and 'remoteid_manufacturer' not in r,r
+    cases+=2
     # GRE to an address that is not a configured decoy is ignored.
     rows,_=run(eth_capture([gre(strip(beacon(b'TELLO-58ECCC')),dst='10.9.9.9'),gre(strip(rid_beacon()),dst='10.9.9.9')]),WIRELESS,live=True)
     assert not by(rows,'802.11') and not by(rows,'remote-id'),rows

@@ -9,7 +9,16 @@ new manipulation findings promptly, and a final summary if activity remains
 unreported. Flight changes alone do not generate extra records. Traffic can
 come from simulators or replays; detection does not prove a drone is airborne.
 
-## Latest changes — v0.17.0
+## Latest changes — v0.18.0
+
+**Remote ID names the manufacturer:** serial-number Remote IDs now fill
+`likely_manufacturer` and `remoteid_manufacturer` from the ANSI/CTA-2063 code
+(first 4 characters: `1581` DJI, `1748` Autel, `1668` Skydio, `1588` Parrot, …).
+Optionally point `DroneManufacturer::model_file` at the FAA accepted-serials list
+(built with `tools/faa_to_zeek.py`) to add `remoteid_model`; Zeek re-reads the file
+when it changes. See [Remote ID manufacturer and model](#remote-id-manufacturer-and-model).
+
+### Earlier changes — v0.17.0
 
 **Wireless records link to `conn.log`:** 802.11 inventory and Remote ID records
 now carry `wireless_related_uids`, the `uid`s of flows Zeek decapsulated from the
@@ -141,7 +150,8 @@ It adds:
 - **Remote ID** (`protocol: remote-id`): Open Drone ID messages over Wi-Fi beacon
   (vendor IE `FA:0B:BC` type `0x0D`) and Wi-Fi NAN. Logs the UAS ID, drone
   position, altitude, height, speed, heading, status, operator location,
-  operator ID and self-description.
+  operator ID and self-description, plus manufacturer (and model, with the FAA
+  file) from the serial number.
 - **Disconnect bursts against drone networks:** 20 distinct, unprotected,
   non-retry deauthentication (or, separately, disassociation) frames within 10
   seconds against a tracked drone access point add a `manipulation_detection`
@@ -167,6 +177,42 @@ sees one channel at a time, so use channel hopping or one radio per band.
 The wireless input uses `raw_packet`, which runs for every packet; on busy
 wired sensors with no wireless feed, set `DroneRadio::enabled = F`. The Remote ID and inventory decoders are new and
 have not yet been validated against live broadcasters.
+
+## Remote ID manufacturer and model
+
+For `remoteid_id_type: serial-number`, the serial (ANSI/CTA-2063-A: 4-character
+manufacturer code, 1 length character, then the manufacturer's serial) is matched
+in this order:
+
+1. **FAA file** (optional): exact serials and serial ranges with make and model.
+   `remoteid_identity_source: faa-list`.
+2. **Built-in codes** (`DroneManufacturer::manufacturer_codes`): DJI `1581`, Autel
+   Robotics `1748`, Skydio `1668`, Dronetag add-on `1596`, Parrot `1588`, AgEagle
+   (senseFly) `1587`, Wingtra `1744`, Percepto `1701`, Wing Aviation `1633`.
+   `remoteid_identity_source: manufacturer-code`. Extend with
+   `redef DroneManufacturer::manufacturer_codes += { ["1234"] = "Example" };`.
+
+A match sets `likely_manufacturer`, `remoteid_manufacturer` and, from the file only,
+`remoteid_model`. Other ID types (CAA registration, UTM UUID, session ID) carry no
+manufacturer code and stay `unknown`.
+
+To use the FAA file, convert the FAA Remote ID serial CSVs (the
+[faa-rid-lookup](https://github.com/jlrjr/faa-rid-lookup) export layout) and point
+the sensor at the result:
+
+```sh
+python3 tools/faa_to_zeek.py --ranges serial_ranges.csv --exact exact_serials.csv -o remoteid-serials.tsv
+```
+
+```zeek
+redef DroneManufacturer::model_file = "/path/to/remoteid-serials.tsv";
+```
+
+Only `accepted`, non-deleted rows are kept. The file is loaded with
+`Input::add_table` in `REREAD` mode, so replacing it (the converter writes
+atomically) updates matching without a restart; `reporter.log` shows
+`drone-detector: loaded N Remote ID serials ...` after each read. The list is a
+third-party snapshot of FAA data; refresh it periodically.
 
 ## Documentation and credits
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.18.0
+
+- Remote ID serial numbers identify the manufacturer: new fields
+  `remoteid_manufacturer`, `remoteid_model` and `remoteid_identity_source`, and
+  `likely_manufacturer` is no longer always `unknown` on `remote-id` records.
+- Built-in ANSI/CTA-2063 manufacturer codes (`DroneManufacturer::manufacturer_codes`,
+  matched on the first 4 serial characters): DJI, Autel Robotics, Skydio,
+  Dronetag, Parrot, AgEagle (senseFly), Wingtra, Percepto, Wing Aviation.
+- Optional `DroneManufacturer::model_file`: FAA accepted Remote ID serials and
+  ranges with make/model, loaded with `Input::add_table` (`REREAD`). New
+  `tools/faa_to_zeek.py` converts the FAA CSV export to the Zeek TSV format.
+  Rows are not delivered as per-row events, which overflowed Zeek 9's event queue
+  with the full ~4,400-row list.
+
 ## v0.17.0
 
 - New field `wireless_related_uids` on `802.11` and `remote-id` records: `uid`s

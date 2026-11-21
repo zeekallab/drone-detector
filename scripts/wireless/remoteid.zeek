@@ -3,6 +3,7 @@
 # service discovery frames). Field layouts follow opendroneid-core-c; validate
 # against a real broadcaster before relying on decoded positions.
 @load ./radiotap
+@load ./manufacturers
 
 module DroneRemoteID;
 
@@ -12,6 +13,12 @@ export {
         remoteid_transport: string &log &optional;
         remoteid_transmitter: string &log &optional;
         remoteid_ua_id: string &log &optional;
+        ## From the serial number (remoteid_id_type serial-number): the built-in
+        ## manufacturer codes, or make/model from DroneManufacturer::model_file.
+        remoteid_manufacturer: string &log &optional;
+        remoteid_model: string &log &optional;
+        ## "faa-list" or "manufacturer-code".
+        remoteid_identity_source: string &log &optional;
         remoteid_id_type: string &log &optional;
         remoteid_ua_type: string &log &optional;
         remoteid_status: string &log &optional;
@@ -151,6 +158,17 @@ function emit(m: string, b: Broadcaster, final: bool)
         $likely_manufacturer="unknown",$evidence="astm-f3411-"+b$transport,$inspection_limited=F,
         $remoteid_transport=b$transport,$remoteid_transmitter=m,$remoteid_messages=b$messages);
     if ( b?$ua_id ) { rec$remoteid_ua_id=b$ua_id; rec$remoteid_id_type=b$id_type; rec$remoteid_ua_type=b$ua_type; }
+    if ( b?$ua_id && b$id_type == "serial-number" )
+        {
+        local who=DroneManufacturer::identify(b$ua_id);
+        if ( who$manufacturer != "" )
+            {
+            rec$likely_manufacturer=who$manufacturer;
+            rec$remoteid_manufacturer=who$manufacturer;
+            rec$remoteid_identity_source=who$source;
+            if ( who?$model ) rec$remoteid_model=who$model;
+            }
+        }
     if ( b?$status ) rec$remoteid_status=b$status;
     if ( b?$lat ) { rec$remoteid_latitude=b$lat; rec$remoteid_longitude=b$lon; }
     if ( b?$alt ) rec$remoteid_altitude_m=b$alt;
